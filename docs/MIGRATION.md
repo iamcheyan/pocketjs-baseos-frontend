@@ -1,0 +1,137 @@
+# PocketJS frontend migration to BaseOS
+
+## Stage 1: bootable frontend payload
+
+The payload installs `System/launch_frontend.sh`, the PocketJS Linux KMS runtime,
+and the approved launcher package. BaseOS `frontend-session` invokes the
+script from the SD root through `/bin/sh`; no systemd unit is used. The script
+checks runtime and package presence, probes DRM nodes in order, runs package
+admission with `--check`, then starts the runtime with `--package` and `--card`.
+Diagnostics stay in `/tmp/pocketjs-frontend.log` (RAM). Consecutive startup or
+runtime failures back off, reaching 30 seconds from the third failure.
+
+The approved `inputs/boot.pocket` baseline is 4,084,728 bytes with SHA-256
+`d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2`. It carries
+the HOME / MEDIA / GAMES / SETUP / SYSTEM workspaces, the top Wi-Fi/Bluetooth/
+IPv4/WS/battery status bar, horizontal `CardCarousel`, and L/R workspace
+navigation with directional selection, A launch, and B back. The package profile
+is `rocknix-h700-kms`; admission on the target device is a required check.
+
+## Runtime API findings
+
+The SDK filesystem module is not an unrestricted Node filesystem API.
+`framework/src/fs-api.ts` describes paths as relative to an app's own data root
+(lines 17–20); `contracts/spec/fs.ts` specifies that the host binds this root
+and the guest cannot name absolute paths or another app's tree (lines 27–37).
+The module throws when `globalThis.fs` is not mounted (fs-api.ts lines 23–27,
+67–72). The current Linux KMS target advertises only `input.buttons`,
+`input.pointer`, `input.touch`, and `text.glyphs.baked` in
+`programs/linux-kms-h700/pocket.runtime-config.ts` lines 7–18, and its H700
+profile likewise has no `data.fs`. Its runtime loads one package and boots one
+guest (`programs/linux-kms/src/main.rs` lines 138–151 and 239–258); the inspected
+host does not expose a guest filesystem mount or arbitrary host filesystem API.
+The approved launcher manifest also does not request `data.fs`.
+
+**Conclusion:** this runtime cannot use the PocketJS SDK `readdirSync` API to
+scan `/mnt/sdcard/games/`. The first-stage payload therefore starts the approved
+launcher UI, with Library discovery unavailable. No Python or shell scanner is
+used to bypass the sandbox.
+
+## Library and child package limitations
+
+The approved launcher baseline has fallback behavior for missing host bridge
+calls (`host?.__pocketshell?.(command) ?? ""`). This lets its UI render without
+the ROCKNIX bridge; it does not provide file enumeration or package execution.
+The Library data list remains empty and its content/document functions have no
+BaseOS data provider. The selected package cannot launch another `.pocket` from
+inside the current Linux KMS runtime.
+
+Evidence for package switching:
+
+- `programs/linux-kms/src/main.rs` parses `--package` once, opens/admission-checks
+  that one package, boots one guest, and ticks it until exit.
+- `framework/src/launcher.ts` treats `appTable` and `appLaunch` as optional host
+  operations; absent operations return null/false.
+- `docs/LAUNCHER.md` specifies that switching is host-provided, not an app-side
+  process primitive.
+
+These are explicit first-stage limitations. No fake A-button launch behavior
+is added for Library entries.
+
+## Stage 2: existing PocketShell bridge compatibility layer
+
+The supplied runtime binary contains PocketShell bridge strings, including
+`__pocketshell`, `__launcher`, `POCKETSHELL_LIBRARY_ROOTS`,
+`POCKETSHELL_LIBRARY_DATA_ROOT`, `/usr/bin/pocketshell-games`,
+`/usr/bin/pocketshell-play`, `systemd-run --unit=pocketshell-game`,
+`systemctl`, `pactl`, and `amixer`. This is direct `strings` evidence that the
+bridge code was compiled into the binary; it does **not** prove its commands
+work on BaseOS or that every shim path is present.
+
+The revised plan reuses that bridge and supplies host compatibility pieces.
+No new ABI or runtime rebuild is planned unless device checks show the existing
+binary cannot reach the bridge operations.
+
+1. **Map persistent paths.** The frontend entry bind-mounts the SD root on the
+   existing `/storage` mount point when available. This makes the bridge's
+   existing absolute paths resolve on the card. Confirm the target image has
+   `/storage`, `mountpoint`, and permission for `mount --bind`; the script logs
+   success/failure. A failed bind leaves the launcher able to start but does
+   not provide working persistent bridge data.
+2. **Library index.** Configure `POCKETSHELL_LIBRARY_ROOTS` to the card's games
+   directory only after verifying from the compiled bridge/source that this
+   variable bypasses `/usr/bin/pocketshell-games`. The runtime string table
+   proves the variable name and helper path exist, not that the helper can be
+   skipped. If the bridge does invoke the helper, provide a BusyBox shell
+   implementation that emits the expected index format; Python is unavailable
+   on BaseOS and must not be introduced. Preserve root-level `.pocket` as
+   `misc`, sort groups/files stably, and verify counts on device.
+3. **Game launch.** The bridge references `systemd-run` and
+   `/usr/bin/pocketshell-play`; BaseOS has no systemd. Do not provide a generic
+   background `systemd-run` shim: the current runtime owns DRM and a child game
+   must receive display/input ownership safely. Implement a narrowly scoped
+   `systemd-run` compatibility wrapper plus a BaseOS `pocketshell-play` path
+   only after tracing the actual bridge arguments and proving the sequence
+   launch → game exit → frontend respawn. Until then Library launch remains
+   disabled/unavailable.
+4. **Settings and services.** Inventory BaseOS's `systemctl` shim and extend
+   only the exact bridge actions needed to report default-on `dropbear`/`adbd`
+   and supported daemons. Check `pactl` and `amixer` availability; adapt volume
+   calls to the installed ALSA interface without claiming missing services
+   exist. Bind the settings data path under the card and create defaults only
+   where the bridge expects them.
+5. Keep the source snapshot `inputs/launcher-src/` and the full
+   `inputs/CARD-BASELINE.patch`; retain the horizontal 104×108 CardCarousel,
+   icon and selected styling, five workspace navigation, and status bar. Any
+   BaseOS-specific UI change must be listed in the migration record.
+
+The three-stage scope and status table are in [ROADMAP.md](ROADMAP.md). Stage 2
+is a compatibility-layer task, not a new-ABI project; its Library and game
+launch acceptance remains unverified until the bridge shims are implemented and
+exercised on BaseOS hardware.
+
+## Source and package baseline
+
+- Source snapshot: `inputs/launcher-src/` (feat/pocketshell-cards approved
+  snapshot); `inputs/CARD-BASELINE.patch` records its 1,099-line uncommitted
+  change set. Do not use `inputs/launcher-src-WRONG-grid-old/`.
+- UI reference package: `inputs/boot.pocket`, size 4,084,728 bytes,
+  SHA-256 `d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2`.
+- Runtime: `inputs/pocket-linux-kms`, copied as supplied; not built here.
+- `boot.pocket` is a package artifact, not a substitute for the source snapshot.
+
+## Verification record
+
+Input checks run:
+
+- `stat -c '%n %s bytes %A' inputs/boot.pocket inputs/pocket-linux-kms` →
+  `inputs/boot.pocket 4084728 bytes -rw-r--r--`; runtime `2233080 bytes -rwxr-xr-x`.
+- `sha256sum inputs/boot.pocket` →
+  `d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2`.
+
+Payload syntax and packaging are recorded after the acceptance run. Package
+admission on BaseOS hardware, display/input, Library behavior, SSH/ADB
+reachability, and recovery behavior remain **not verified** until the device
+checklist is performed. The supplied runtime is AArch64, so its target-profile
+admission was not run on this host.
+

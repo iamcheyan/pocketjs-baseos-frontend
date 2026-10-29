@@ -1,0 +1,8 @@
+PocketJS BaseOS frontend payload
+
+Runtime source: inputs/pocket-linux-kms (AArch64 ELF, copied without rebuilding)
+Launcher package source: inputs/boot.pocket (user-approved card launcher baseline)
+Launcher package size: 4084728 bytes
+Launcher package SHA-256: d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2
+Package profile: rocknix-h700-kms (admission must be checked on-device by this runtime)
+UI baseline: feat/pocketshell-cards snapshot with horizontal CardCarousel

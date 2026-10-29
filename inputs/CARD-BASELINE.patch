@@ -1,0 +1,1099 @@
+diff --git a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/main.tsx b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/main.tsx
+index ba44d93dbf..54787f9d55 100644
+--- a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/main.tsx
++++ b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/main.tsx
+@@ -19,7 +19,7 @@ import {
+   type SettingsState,
+ } from "./pages/settings-page";
+ import { SystemPage } from "./pages/system-page";
+-import { parseSystemSnapshot, type SystemSnapshot } from "./system-status";
++import { parseNetworkSnapshot, parseSystemSnapshot, type NetworkSnapshot, type SystemSnapshot } from "./system-status";
+ 
+ type HostUI = {
+   __launcher?: (command: string) => string;
+@@ -27,9 +27,6 @@ type HostUI = {
+ };
+ type Run = { text: string; fg: number; bg: number; flags: number };
+ 
+-const NAMES = ["APPS", "FILES", "VIM", "TOP", "LOG"];
+-const LOG_WORKSPACE = 4;
+-const ROWS = 12;
+ 
+ const abgr = (rgb: number) => {
+   const r = rgb & 0xff;
+@@ -52,13 +49,12 @@ mount(() => {
+   // -------------------------------------------------------------------------
+   const [currentScreen, setCurrentScreen] = createSignal(0); // 0: Home, 1: Media, 2: Games, 3: Settings, 4: System
+   const [launcherOpen, setLauncherOpen] = createSignal(true);
+-  const [active, setActive] = createSignal(0); // PTY workspace 0..4
+ 
+   // Card indexes per screen
+   const [homeCardIndex, setHomeCardIndex] = createSignal(0);
+   const [mediaCardIndex, setMediaCardIndex] = createSignal(0);
+   const [gamesCardIndex, setGamesCardIndex] = createSignal(0);
+-  const [systemToolIndex, setSystemToolIndex] = createSignal(0);
++  const [systemPageIndex, setSystemPageIndex] = createSignal(0);
+ 
+   // Settings State
+   const [settingsIndex, setSettingsIndex] = createSignal(0);
+@@ -67,24 +63,17 @@ mount(() => {
+   const [wifiEnabled, setWifiEnabled] = createSignal(true);
+   const [bluetoothEnabled, setBluetoothEnabled] = createSignal(false);
+   const [timeoutIndex, setTimeoutIndex] = createSignal(3); // default 5m
+-  const [services, setServices] = createSignal<Record<string, boolean>>({
+-    ssh: true,
+-    samba: false,
+-    syncthing: false,
+-    adbusb: true,
+-    avahi: true,
+-    http: false,
+-    ftp: false,
+-    rsyncd: false,
+-    telnet: false,
+-    "pocketshell-dev": true,
+-  });
++  const [services, setServices] = createSignal<Record<string, boolean>>({ ssh: true, adbusb: true });
+ 
+   // Hardware Status State
+   const [ipAddress, setIpAddress] = createSignal("--");
+   const [batteryLevel, setBatteryLevel] = createSignal(-1);
++  const [sshEnabled, setSshEnabled] = createSignal(false);
++  const [adbEnabled, setAdbEnabled] = createSignal(false);
++  const [mtpEnabled, setMtpEnabled] = createSignal(false);
+   const [systemSnapshot, setSystemSnapshot] = createSignal<SystemSnapshot | null>(null);
+   const [toastMessage, setToastMessage] = createSignal("");
++  const [networkSnapshot, setNetworkSnapshot] = createSignal<NetworkSnapshot>({ interface: null, address: null, connected: false });
+ 
+   // Animation Node Mirrors & Safe Wrappers
+   let pageNode: NodeMirror | undefined;
+@@ -114,9 +103,8 @@ mount(() => {
+ 
+ 
+   // -------------------------------------------------------------------------
+-  // Native Terminal & Input Workspace State (Preserved)
+-  // -------------------------------------------------------------------------
+-  const [lines, setLines] = createSignal<Run[][]>(Array.from({ length: ROWS }, emptyRow));
++  // Terminal rendering and input state.
++  const [lines, setLines] = createSignal<Run[][]>(Array.from({ length: 12 }, emptyRow));
+   const [cursor, setCursor] = createSignal({ row: 0, col: 0, visible: false });
+   const [input, setInput] = createSignal("");
+   const [commandOpen, setCommandOpen] = createSignal(false);
+@@ -184,7 +172,7 @@ mount(() => {
+ 
+   let armed = false;
+   let previousButtons = 0;
+-  let frameCounter = 0;
++  let lastHardwarePoll = 0;
+ 
+   const send = (command: string) => host?.__pocketshell?.(command) ?? "";
+   const log = (entry: string) =>
+@@ -292,15 +280,16 @@ mount(() => {
+     if (!host?.__launcher) return;
+     const battery = Number(host.__launcher("LEVEL\tbattery"));
+     setBatteryLevel(Number.isFinite(battery) && battery >= 0 && battery <= 100 ? battery : -1);
+-    const wifi = (host.__launcher("LEVEL\twifi") ?? "").trim();
+-    setWifiEnabled(wifi === "on");
+-    const ip = (host.__launcher("LEVEL\tip") ?? "").trim();
+-    const addr = ip.includes("|") ? ip.split("|")[1] : "";
+-    setIpAddress(addr || "--");
++    const network = parseNetworkSnapshot(host.__launcher("LEVEL\tip") ?? "", host.__launcher("LEVEL\twifi") ?? "");
++    setNetworkSnapshot(network);
++    setWifiEnabled(network.connected);
++    setIpAddress(network.address ?? "--");
++    setSshEnabled(host.__launcher("STATUS\tssh") === "true");
++    setAdbEnabled(host.__launcher("STATUS\tadb") === "true");
++    setMtpEnabled(host.__launcher("STATUS\tusb").trim() === "file_transfer");
+   };
+   const syncSystemStatus = () => {
+-    const snapshot = parseSystemSnapshot(host?.__launcher?.("SYSTEM") ?? "");
+-    if (snapshot) setSystemSnapshot(snapshot);
++    setSystemSnapshot(parseSystemSnapshot(host?.__launcher?.("SYSTEM") ?? ""));
+   };
+ 
+   const changeBrightness = (delta: number) => {
+@@ -363,23 +352,20 @@ mount(() => {
+       return;
+     }
+ 
+-    // Terminal app: switch to VT100 workspace
++    // Run the selected app in the single terminal workspace.
+     setLauncherOpen(false);
++    if (app.id === "terminal") return;
+     send("RESET\t0");
+-    if (app.id !== "terminal") {
+-      send(`0\tTEXT ${app.id === "gamepad" ? "/usr/bin/evtest /dev/input/event3" : `/usr/bin/heya-tool ${app.id} --inside`}`);
+-      send("0\tKEY ENTER");
+-    }
+-  };
+-
+-  const launchDiagnosticTool = (tool: LauncherApp) => {
+-    showToast(`启动: ${tool.shortName || tool.name}...`);
+-    setLauncherOpen(false);
+-    send("RESET\t0");
+-    send(`0\tTEXT /usr/bin/heya-tool ${tool.id} --inside`);
++    const command =
++      app.id === "gamepad" ? "/usr/bin/evtest /dev/input/event3"
++      : app.id === "file-manager-text" ? "/usr/bin/heya-tool file-manager-text --inside"
++      : app.id === "monitor" ? "/usr/bin/heya-tool monitor --inside"
++      : `/usr/bin/heya-tool ${app.id} --inside`;
++    send(`0\tTEXT ${command}`);
+     send("0\tKEY ENTER");
+   };
+ 
++
+   const activateCurrent = () => {
+     const s = currentScreen();
+     if (s <= 2) {
+@@ -408,12 +394,6 @@ mount(() => {
+       }
+       return;
+     }
+-    if (s === 4) {
+-      // System Page
+-      const tools = getAppsForScreen(4);
+-      const tool = tools[systemToolIndex()];
+-      if (tool) launchDiagnosticTool(tool);
+-    }
+   };
+ 
+   // -------------------------------------------------------------------------
+@@ -436,7 +416,7 @@ mount(() => {
+       }
+       if (fields[0] !== "L") continue;
+       const row = Number(fields[1]);
+-      if (!Number.isInteger(row) || row < 0 || row >= ROWS) continue;
++      if (!Number.isInteger(row) || row < 0 || row >= 12) continue;
+       const runs: Run[] = [];
+       for (const field of fields.slice(2)) {
+         const parts = field.split(":");
+@@ -461,25 +441,14 @@ mount(() => {
+     if (nextCursor) setCursor(nextCursor);
+   };
+ 
+-  const switchTo = (id: number) => {
+-    const next = (id + NAMES.length) % NAMES.length;
+-    if (next === active()) return;
+-    setActive(next);
+-    setLines(Array.from({ length: ROWS }, emptyRow));
+-    setCursor({ row: 0, col: 0, visible: false });
+-    send(`ACTIVATE\t${next}`);
+-    applyRows(send(`SNAP\t${next}`));
+-    log(`Workspace Activated WS${next + 1}`);
+-  };
+-
+-  const sendKey = (key: string) => send(`${active()}\tKEY ${key}`);
++  const sendKey = (key: string) => send(`0\tKEY ${key}`);
+   const submitInput = () => {
+     const value = input().trim();
+     if (value)
+       setInputHistory((items) => [value, ...items.filter((item) => item !== value)]);
+     if (value) {
+-      send(`${active()}\tTEXT ${value}`);
+-      send(`${active()}\tKEY ENTER`);
++      send(`0\tTEXT ${value}`);
++      send("0\tKEY ENTER");
+     }
+     setInput("");
+     setInputOpen(false);
+@@ -510,14 +479,15 @@ mount(() => {
+ 
+   onMount(() => {
+     send("RESIZE\t12x46");
+-    for (let id = 0; id < NAMES.length; id++) send(`${id}\tSTART`);
+-    log("Workspace Created WS1..WS5");
++    send("0\tSTART");
++    log("Terminal Started");
+     syncHardwareLevels();
+     syncHardwareStatus();
+     syncSystemStatus();
++    lastHardwarePoll = Date.now();
+ 
+     onTextEvent((event: TextEvent) => {
+-      if (active() === 0 && launcherOpen()) {
++      if (launcherOpen()) {
+         if (event.kind === "key" && event.pressed) {
+           if (event.key === "ArrowLeft") {
+             if (currentScreen() <= 2) moveCard(-1);
+@@ -529,7 +499,7 @@ mount(() => {
+               else if (sel === 3) toggleBluetooth();
+               else if (sel === 4) cycleTimeout(-1);
+             } else if (currentScreen() === 4) {
+-              setSystemToolIndex((p) => Math.max(0, p - 1));
++              setSystemPageIndex((p) => (p + 4) % 5);
+             }
+           } else if (event.key === "ArrowRight") {
+             if (currentScreen() <= 2) moveCard(1);
+@@ -541,12 +511,14 @@ mount(() => {
+               else if (sel === 3) toggleBluetooth();
+               else if (sel === 4) cycleTimeout(1);
+             } else if (currentScreen() === 4) {
+-              setSystemToolIndex((p) => Math.min(getAppsForScreen(4).length - 1, p + 1));
++              setSystemPageIndex((p) => (p + 1) % 5);
+             }
+           } else if (event.key === "ArrowUp") {
+             if (currentScreen() === 3) setSettingsIndex((p) => Math.max(0, p - 1));
++            else if (currentScreen() === 4) setSystemPageIndex((p) => (p + 4) % 5);
+           } else if (event.key === "ArrowDown") {
+             if (currentScreen() === 3) setSettingsIndex((p) => Math.min(15, p + 1));
++            else if (currentScreen() === 4) setSystemPageIndex((p) => (p + 1) % 5);
+           } else if (event.key === "Enter") {
+             activateCurrent();
+           } else if (event.key === "Escape") {
+@@ -563,7 +535,7 @@ mount(() => {
+       if (event.kind === "commit") {
+         if (inputOpen()) setInput((value) => value + event.text);
+         else if (commandOpen()) setInput((value) => value + event.text);
+-        else if (active() < LOG_WORKSPACE) send(`${active()}\tTEXT ${event.text}`);
++        else send(`0\tTEXT ${event.text}`);
+         return true;
+       }
+       if (event.kind !== "key" || !event.pressed) return false;
+@@ -582,10 +554,9 @@ mount(() => {
+           const value = input();
+           setInput("");
+           setCommandOpen(false);
+-          switchTo(0);
+           if (value) send(`0\tTEXT ${value}`);
+           send("0\tKEY ENTER");
+-          log("Process Input WS1");
++          log("Process Input");
+         }
+         return true;
+       }
+@@ -619,16 +590,11 @@ mount(() => {
+       delete global.__pocketshellOutput;
+       applyRows(payload);
+     }
+-    if (active() === LOG_WORKSPACE && armed && !inputOpen())
+-      applyRows(send(`SNAP\t${LOG_WORKSPACE}`));
+-
+-    // Periodic hardware poll: levels every ~1s, battery/Wi-Fi/IP every ~5s
+-    // (the latter shells out to `ip`, so poll it less often).
+-    frameCounter++;
+-    if (frameCounter % 60 === 0) {
+-      syncHardwareLevels();
+-    }
+-    if (frameCounter % 300 === 0) {
++
++    // Poll on elapsed time so the visible page remains live at any frame rate.
++    const now = Date.now();
++    if (now - lastHardwarePoll >= 5000) {
++      lastHardwarePoll = now;
+       syncSystemStatus();
+       syncHardwareStatus();
+     }
+@@ -652,8 +618,8 @@ mount(() => {
+     // -----------------------------------------------------------------------
+     // Native Switch Launcher Input Mode
+     // -------------------------------------------------------------------------
+-    if (active() === 0 && launcherOpen()) {
+-      // Screen transition triggers: R/ZR/START forward cycle, L/ZL reverse cycle
++
++    if (launcherOpen()) {
+       if (pressed & (BTN.RTRIGGER | BTN.ZR | BTN.START)) {
+         switchScreen(currentScreen() + 1, 1);
+         return;
+@@ -662,16 +628,12 @@ mount(() => {
+         switchScreen(currentScreen() - 1, -1);
+         return;
+       }
+-
+-      // Select: open virtual keyboard
+       if (pressed & BTN.SELECT) {
+         setInput("");
+         setInputOpen(true);
+         setInputFunction(0);
+         return;
+       }
+-
+-      // Directional D-pad
+       if (pressed & BTN.LEFT) {
+         if (currentScreen() <= 2) moveCard(-1);
+         else if (currentScreen() === 3) {
+@@ -682,7 +644,7 @@ mount(() => {
+           else if (sel === 3) toggleBluetooth();
+           else if (sel === 4) cycleTimeout(-1);
+         } else if (currentScreen() === 4) {
+-          setSystemToolIndex((p) => Math.max(0, p - 1));
++          setSystemPageIndex((p) => (p + 4) % 5);
+         }
+       }
+       if (pressed & BTN.RIGHT) {
+@@ -695,21 +657,19 @@ mount(() => {
+           else if (sel === 3) toggleBluetooth();
+           else if (sel === 4) cycleTimeout(1);
+         } else if (currentScreen() === 4) {
+-          setSystemToolIndex((p) => Math.min(getAppsForScreen(4).length - 1, p + 1));
++          setSystemPageIndex((p) => (p + 1) % 5);
+         }
+       }
+       if (pressed & BTN.UP) {
+         if (currentScreen() === 3) setSettingsIndex((p) => Math.max(0, p - 1));
++        else if (currentScreen() === 4) setSystemPageIndex((p) => (p + 4) % 5);
+       }
+       if (pressed & BTN.DOWN) {
+         if (currentScreen() === 3) setSettingsIndex((p) => Math.min(15, p + 1));
++        else if (currentScreen() === 4) setSystemPageIndex((p) => (p + 1) % 5);
+       }
+-
+-      // Action buttons: CIRCLE (A) = confirm, CROSS (B) = back
+       if (pressed & BTN.CIRCLE) activateCurrent();
+-      if (pressed & BTN.CROSS) {
+-        if (currentScreen() > 0) switchScreen(0, -1);
+-      }
++      if (pressed & BTN.CROSS && currentScreen() > 0) switchScreen(0, -1);
+       return;
+     }
+ 
+@@ -743,29 +703,26 @@ mount(() => {
+     // -----------------------------------------------------------------------
+     // Terminal Mode Controller Input
+     // -----------------------------------------------------------------------
+-    if (pressed & BTN.LEFT) switchTo(active() - 1);
+-    if (pressed & BTN.RIGHT) switchTo(active() + 1);
+     if (pressed & BTN.LTRIGGER) sendKey("PGUP");
+     if (pressed & BTN.RTRIGGER) sendKey("PGDN");
++    if (pressed & BTN.LEFT) sendKey("LEFT");
++    if (pressed & BTN.RIGHT) sendKey("RIGHT");
+     if (pressed & BTN.UP) sendKey("UP");
+     if (pressed & BTN.DOWN) sendKey("DOWN");
+     if (pressed & BTN.CIRCLE) {
+       sendKey("ENTER");
+-      log(`Process Input WS${active() + 1}`);
++      log("Process Input");
+     }
+     if (pressed & BTN.CROSS) {
+       sendKey("ESC");
+-      switchTo(0);
+       setLauncherOpen(true);
+     }
+-    if (pressed & BTN.START) switchTo(active() + 1);
+     if (pressed & BTN.SELECT) {
+       setInput("");
+       setInputOpen(true);
+       setInputFunction(0);
+     }
+   });
+-
+   const runColor = (run: Run) =>
+     (run.flags & 2) !== 0
+       ? { textColor: abgr(run.bg), bgColor: abgr(run.fg) }
+@@ -814,7 +771,7 @@ mount(() => {
+       {/* ------------------------------------------------------------------- */}
+       {/* View Branch A: Switch Native 5-Screen UI (active === 0 && launcherOpen) */}
+       {/* ------------------------------------------------------------------- */}
+-      {active() === 0 && launcherOpen() ? (
++      {launcherOpen() ? (
+         <View class="w-[360px] h-[240px] flex-col justify-between">
+           {/* Persistent Top Status Bar */}
+           <StatusBar
+@@ -822,17 +779,17 @@ mount(() => {
+             wifiConnected={wifiEnabled()}
+             ipAddress={ipAddress()}
+             bluetoothOn={bluetoothEnabled()}
++            sshEnabled={sshEnabled()}
++            adbEnabled={adbEnabled()}
++            mtpEnabled={mtpEnabled()}
+             batteryLevel={batteryLevel()}
++            pageTitle={currentScreen() === 3 ? "SETTINGS" : currentScreen() === 4 ? ["OVERVIEW", "CPU", "MEMORY", "STORAGE", "NETWORK"][systemPageIndex()] : undefined}
++            pageIndex={currentScreen() === 3 ? settingsIndex() : currentScreen() === 4 ? systemPageIndex() : undefined}
++            pageCount={currentScreen() === 3 ? 16 : currentScreen() === 4 ? 5 : undefined}
+           />
+ 
+           {/* Animated Page Container */}
+-          <View
+-            ref={(node: NodeMirror) => {
+-              pageNode = node;
+-            }}
+-            class="w-[360px] h-[198px] flex-col justify-between overflow-hidden relative"
+-          >
+-            {/* Screen 0, 1, 2: Switch Horizontal Card Carousel */}
++          <View class="w-[360px] flex-1 flex-col justify-between overflow-hidden relative">
+             {currentScreen() <= 2 ? (
+               <View class="w-[360px] h-[198px] flex-col justify-between px-2 py-1">
+                 {/* Active Card Title & Description Row */}
+@@ -899,36 +856,29 @@ mount(() => {
+             ) : (
+               /* Screen 4: System Information Page */
+               <SystemPage
+-                selectedToolIndex={systemToolIndex()}
+-                systemTools={getAppsForScreen(4)}
+-                ipAddress={ipAddress()}
+-                wifiConnected={wifiEnabled()}
++                pageIndex={systemPageIndex()}
++                network={networkSnapshot()}
+                 snapshot={systemSnapshot()}
+               />
+             )}
+           </View>
+ 
+-          {/* Bottom Navigation Hint Bar */}
+-          <View class="w-[360px] h-[20px] flex-col justify-between" style={{ bgColor: "#06111B" }}>
+-            <View class="w-[360px] h-[1px]" style={{ bgColor: "#1B3345" }} />
+-            <View class="w-[360px] h-[19px] flex-row items-center justify-between px-2">
+-              <Text class="text-xs" style={{ textColor: "#D8E8FF" }}>
+-                L/R 切屏 · 方向键选择 · A 启动 · B 返回
+-              </Text>
+-              <Text class="text-xs font-bold" style={{ textColor: "#3ECFFF" }}>
+-                SELECT 输入
+-              </Text>
++          {currentScreen() <= 2 ? (
++            <View class="w-[360px] h-[20px] flex-col justify-between" style={{ bgColor: "#06111B" }}>
++              <View class="w-[360px] h-[1px]" style={{ bgColor: "#1B3345" }} />
++              <View class="w-[360px] h-[19px] flex-row items-center justify-between px-2">
++                <Text class="text-xs" style={{ textColor: "#D8E8FF" }}>L/R 切屏 · 方向键选择 · A 启动 · B 返回</Text>
++                <Text class="text-xs font-bold" style={{ textColor: "#3ECFFF" }}>SELECT 输入</Text>
++              </View>
+             </View>
+-          </View>
++          ) : null}
+         </View>
+       ) : (
+-        /* ----------------------------------------------------------------- */
+-        /* View Branch B: Terminal Workspace (active > 0 or !launcherOpen)   */
+-        /* ----------------------------------------------------------------- */
++        /* Terminal output view */
+         <View class="w-[360px] h-[240px] bg-slate-950 flex-col">
+           <View class="absolute left-[10px] top-[1px] w-[340px] h-[24px] items-center">
+             <Text class="text-2xl font-bold text-emerald-300">
+-              ◀ WS{active() + 1}:{active() === 0 && !launcherOpen() ? "TERMINAL" : NAMES[active()]} ▶
++              ◀ TERMINAL
+             </Text>
+             <View class="absolute left-[326px] top-[4px] w-[24px] h-[16px] items-center">
+               <Text class="text-base text-emerald-300">{"\uf240"}</Text>
+@@ -964,11 +914,6 @@ mount(() => {
+             )}
+           </View>
+ 
+-          <View class="absolute left-[10px] top-[222px] w-[340px] h-[16px] items-center">
+-            <Text class="text-xs text-slate-500">
+-              START 切换 · SELECT 输入 · A 确认 · B 返回启动器
+-            </Text>
+-          </View>
+         </View>
+       )}
+ 
+diff --git a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/settings-page.tsx b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/settings-page.tsx
+index 1cb89c4ab8..4c0a13d0c4 100644
+--- a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/settings-page.tsx
++++ b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/settings-page.tsx
+@@ -35,8 +35,10 @@ export const SERVICE_KEYS = [
+   { key: "pocketshell-dev", name: "PocketShell DevBridge" },
+ ];
+ 
++type SettingsRow = { type: string; label: string; key?: string };
++
+ export function SettingsPage(props: { state: SettingsState }) {
+-  const allRows = [
++  const allRows: SettingsRow[] = [
+     { type: "brightness", label: "Brightness" },
+     { type: "volume", label: "Volume" },
+     { type: "wifi", label: "Wi-Fi" },
+@@ -53,29 +55,27 @@ export function SettingsPage(props: { state: SettingsState }) {
+     return allRows.slice(start, start + 6).map((item, i) => ({ ...item, realIndex: start + i }));
+   };
+ 
+-  const renderProgressBar = (value: number) => {
+-    const filled = Math.round(value / 10);
+-    const empty = 10 - filled;
+-    return `[${"=".repeat(filled)}${" ".repeat(empty)}]`;
++  const renderProgressBlocks = (value: number) => {
++    const filled = Math.round(Math.max(0, Math.min(100, value)) / 10);
++    return Array.from({ length: 10 }, (_, index) => index < filled);
+   };
+ 
++  const statePill = (enabled: boolean, label: string, color: "green" | "cyan" = "green") => (
++    <View class={enabled
++      ? `w-[72px] h-[17px] rounded-full items-center justify-center ${color === "green" ? "bg-emerald-900 border border-emerald-400" : "bg-sky-900 border border-sky-400"}`
++      : "w-[72px] h-[17px] rounded-full items-center justify-center bg-slate-800 border border-[#34485a]"}>
++      <Text class={enabled
++        ? `text-xs font-bold ${color === "green" ? "text-emerald-300" : "text-sky-300"}`
++        : "text-xs font-bold text-slate-500"}>
++        {enabled ? label : "OFF"}
++      </Text>
++    </View>
++  );
+   return (
+-    <View class="w-[360px] h-[184px] px-2 py-1 flex-col justify-between">
+-      {/* Category Header */}
+-      <View class="flex-col gap-1 w-full">
+-        <View class="flex-row items-center justify-between w-full">
+-          <Text class="text-xs font-bold text-[#38bdf8]">
+-            {"\uf013"} SYSTEM SETTINGS 系统设置
+-          </Text>
+-          <Text class="text-xs text-slate-400 font-mono">
+-            {props.state.selectedIndex + 1} / {allRows.length}
+-          </Text>
+-        </View>
+-        <View class="w-[344px] h-[1px] bg-[#1e2d3d]" />
+-      </View>
++    <View class="w-[360px] h-[218px] px-2 py-2 flex-col justify-center">
+ 
+       {/* Settings Rows */}
+-      <View class="flex-col gap-1 w-full">
++      <View class="flex-col gap-[3px] w-full">
+         <Index each={visibleWindow()}>
+           {(row) => {
+             const isSelected = () => props.state.selectedIndex === row().realIndex;
+@@ -83,8 +83,8 @@ export function SettingsPage(props: { state: SettingsState }) {
+               <View
+                 class={
+                   isSelected()
+-                    ? "w-[344px] h-[23px] px-2 rounded-md flex-row items-center justify-between bg-[#1e3042] border border-[#38bdf8]"
+-                    : "w-[344px] h-[23px] px-2 rounded-md flex-row items-center justify-between bg-[#14202c] border border-[#273a4b]"
++                    ? "w-[344px] h-[23px] px-2 rounded-lg flex-row items-center justify-between bg-[#1e3042] border border-[#38bdf8]"
++                    : "w-[344px] h-[23px] px-2 rounded-lg flex-row items-center justify-between bg-[#14202c] border border-[#273a4b]"
+                 }
+               >
+                 {/* Left: Label */}
+@@ -100,81 +100,35 @@ export function SettingsPage(props: { state: SettingsState }) {
+ 
+                 {/* Right: Value Widget */}
+                 {row().type === "brightness" ? (
+-                  <View class="flex-row items-center gap-1">
+-                    <Text class="text-xs font-mono text-cyan-300">
+-                      {`${renderProgressBar(props.state.brightness)} ${props.state.brightness}%`}
+-                    </Text>
++                  <View class="flex-row items-center gap-2">
++                    <View class="flex-row gap-[2px] h-[8px] w-[78px]">
++                      <Index each={renderProgressBlocks(props.state.brightness)}>
++                        {(filled) => <View class="flex-1 h-[8px] rounded-sm" style={{ bgColor: filled() ? "#38bdf8" : "#263746" }} />}
++                      </Index>
++                    </View>
++                    <Text class="w-[34px] text-right text-xs font-mono text-cyan-300">{`${props.state.brightness}%`}</Text>
+                   </View>
+                 ) : row().type === "volume" ? (
+-                  <View class="flex-row items-center gap-1">
+-                    <Text class="text-xs font-mono text-cyan-300">
+-                      {`${renderProgressBar(props.state.volume)} ${props.state.volume}%`}
+-                    </Text>
++                  <View class="flex-row items-center gap-2">
++                    <View class="flex-row gap-[2px] h-[8px] w-[78px]">
++                      <Index each={renderProgressBlocks(props.state.volume)}>
++                        {(filled) => <View class="flex-1 h-[8px] rounded-sm" style={{ bgColor: filled() ? "#38bdf8" : "#263746" }} />}
++                      </Index>
++                    </View>
++                    <Text class="w-[34px] text-right text-xs font-mono text-cyan-300">{`${props.state.volume}%`}</Text>
+                   </View>
+                 ) : row().type === "wifi" ? (
+-                  <View
+-                    class={
+-                      props.state.wifi
+-                        ? "px-2 h-[15px] rounded-sm items-center justify-center bg-emerald-900 border border-emerald-400"
+-                        : "px-2 h-[15px] rounded-sm items-center justify-center bg-slate-800"
+-                    }
+-                  >
+-                    <Text
+-                      class={
+-                        props.state.wifi
+-                          ? "text-xs font-bold text-emerald-300"
+-                          : "text-xs font-bold text-slate-500"
+-                      }
+-                    >
+-                      {props.state.wifi ? "ON 开启" : "OFF 关闭"}
+-                    </Text>
+-                  </View>
++                  statePill(props.state.wifi, "ON", "cyan")
+                 ) : row().type === "bluetooth" ? (
+-                  <View
+-                    class={
+-                      props.state.bluetooth
+-                        ? "px-2 h-[15px] rounded-sm items-center justify-center bg-sky-900 border border-sky-400"
+-                        : "px-2 h-[15px] rounded-sm items-center justify-center bg-slate-800"
+-                    }
+-                  >
+-                    <Text
+-                      class={
+-                        props.state.bluetooth
+-                          ? "text-xs font-bold text-sky-300"
+-                          : "text-xs font-bold text-slate-500"
+-                      }
+-                    >
+-                      {props.state.bluetooth ? "ON 开启" : "OFF 关闭"}
+-                    </Text>
+-                  </View>
++                  statePill(props.state.bluetooth, "ON", "cyan")
+                 ) : row().type === "timeout" ? (
+-                  <View class="flex-row items-center gap-1">
+-                    <Text class="text-xs font-mono text-cyan-300">
+-                      {`[ ${TIMEOUT_OPTIONS[props.state.timeoutIndex].label} ]`}
+-                    </Text>
++                  <View class="w-[72px] h-[17px] rounded-full bg-[#102d3b] border border-[#28627a] items-center justify-center">
++                    <Text class="text-xs font-mono text-cyan-300">{TIMEOUT_OPTIONS[props.state.timeoutIndex].label}</Text>
+                   </View>
+                 ) : row().type === "service" ? (
+-                  <View
+-                    class={
+-                      props.state.services[(row() as any).key]
+-                        ? "px-2 h-[15px] rounded-sm items-center justify-center bg-emerald-900 border border-emerald-400"
+-                        : "px-2 h-[15px] rounded-sm items-center justify-center bg-slate-800"
+-                    }
+-                  >
+-                    <Text
+-                      class={
+-                        props.state.services[(row() as any).key]
+-                          ? "text-xs font-bold text-emerald-300"
+-                          : "text-xs font-bold text-slate-500"
+-                      }
+-                    >
+-                      {props.state.services[(row() as any).key] ? "ENABLED 开启" : "DISABLED 关闭"}
+-                    </Text>
+-                  </View>
++                  statePill(!!row().key && props.state.services[row().key!], "ON")
+                 ) : (
+-                  <Text class="text-xs font-bold text-amber-300">
+-                    PRESS A 打开
+-                  </Text>
++                  <Text class="text-xs font-bold text-amber-300">PRESS A 打开</Text>
+                 )}
+               </View>
+             );
+@@ -182,18 +136,6 @@ export function SettingsPage(props: { state: SettingsState }) {
+         </Index>
+       </View>
+ 
+-      {/* Control hints */}
+-      <View class="flex-col gap-1 w-full">
+-        <View class="w-[344px] h-[1px] bg-[#1e2d3d]" />
+-        <View class="flex-row items-center justify-between w-full">
+-          <Text class="text-xs text-slate-500">
+-            方向键选择 · A 切换 · B 返回
+-          </Text>
+-          <Text class="text-xs text-[#38bdf8] font-mono">
+-            SLEEP runtime.conf
+-          </Text>
+-        </View>
+-      </View>
+     </View>
+   );
+ }
+diff --git a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/system-page.tsx b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/system-page.tsx
+index 659d0699ec..00f9e9dca2 100644
+--- a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/system-page.tsx
++++ b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/pages/system-page.tsx
+@@ -1,19 +1,11 @@
+ import { createEffect, Index } from "solid-js";
+-import {
+-  Text,
+-  View,
+-  type NodeMirror,
+-} from "@pocketjs/framework/solid/components";
++import { Text, View, type NodeMirror } from "@pocketjs/framework/solid/components";
+ import { animate } from "@pocketjs/framework/animation";
+-import type { LauncherApp } from "../launcher-catalog";
+-import { PixelIcon } from "../pixel-icon";
+-import { ramUsage, type SystemSnapshot } from "../system-status";
++import { ramUsage, type NetworkSnapshot, type SystemSnapshot } from "../system-status";
+ 
+ export interface SystemPageProps {
+-  selectedToolIndex: number;
+-  systemTools: LauncherApp[];
+-  ipAddress: string;
+-  wifiConnected: boolean;
++  pageIndex: number;
++  network: NetworkSnapshot;
+   snapshot: SystemSnapshot | null;
+ }
+ 
+@@ -24,65 +16,19 @@ const AMBER = "#FFB400";
+ const PALE = "#D8E8FF";
+ const MUTED = "#7893A8";
+ const LINE = "#1B3345";
+-
++const PAGES = ["OVERVIEW", "CPU", "MEMORY", "STORAGE", "NETWORK"];
+ const text = (value: string | null | undefined) => value || "--";
+-const blocks = (percent: number | null, width = 8) => {
+-  const filled = percent === null ? 0 : Math.round((Math.max(0, Math.min(100, percent)) / 100) * width);
+-  return Array.from({ length: width }, (_, index) => index < filled);
+-};
+-
+-const compactOs = (snapshot: SystemSnapshot | null) =>
+-  text(snapshot?.os).replace(/\s*Linux\s*/i, " ").trim();
+-const compactKernel = (snapshot: SystemSnapshot | null) =>
+-  text(snapshot?.kernel).replace(/^Linux\s+/i, "").replace(/\s*\(([^)]+)\)\s*$/, " $1");
+-
+-function Metric(props: {
+-  kind: "cpu" | "ram" | "storage" | "network";
+-  color: string;
+-  label: string;
+-  value: string;
+-  meta: string;
+-  percent?: number | null;
+-}) {
+-  return (
+-    <View class="flex-1 flex-row items-center px-1">
+-      <PixelIcon kind={props.kind} color={props.color} />
+-      <View class="flex-col flex-1 ml-1">
+-        <View class="flex-row items-center justify-between">
+-          <Text class="text-xs font-bold" style={{ textColor: props.color }}>{props.label}</Text>
+-          <Text class="text-xs" style={{ textColor: MUTED }}>{props.meta}</Text>
+-        </View>
+-        <Text class="text-sm font-bold font-mono" style={{ textColor: PALE }}>{props.value}</Text>
+-        {props.percent !== undefined ? (
+-          <View class="flex-row gap-[1px] h-[3px] w-[48px] mt-[1px]">
+-            <Index each={blocks(props.percent ?? null)}>
+-              {(filled) => (
+-                <View
+-                  class="flex-1 h-[3px]"
+-                  style={{ bgColor: filled() ? props.color : LINE }}
+-                />
+-              )}
+-            </Index>
+-          </View>
+-        ) : null}
+-      </View>
+-    </View>
+-  );
+-}
++const percentText = (value: number | null | undefined) => value === null || value === undefined ? "--%" : `${value}%`;
++const compactOs = (snapshot: SystemSnapshot | null) => text(snapshot?.os).replace(/\s*Linux\s*/i, " ").trim();
++const compactKernel = (snapshot: SystemSnapshot | null) => text(snapshot?.kernel).replace(/^Linux\s+/i, "").replace(/\s*\(([^)]+)\)\s*$/, " $1");
+ 
+-function ToolTab(props: {
+-  tool: LauncherApp;
+-  active: boolean;
+-}) {
++function Bar(props: { value: number | null | undefined; color: string }) {
++  const blocks = () => Array.from({ length: 16 }, (_, index) => index < Math.round(Math.max(0, Math.min(100, props.value ?? 0)) / 6.25));
+   return (
+-    <View class="flex-1 h-[18px] flex-col">
+-      <Text
+-        class={props.active ? "text-xs font-bold" : "text-xs"}
+-        style={{ textColor: props.active ? GREEN : MUTED }}
+-      >
+-        {props.active ? "▸" : " "}{props.tool.shortName || props.tool.name}
+-      </Text>
+-      <View class="h-[1px]" style={{ bgColor: props.active ? GREEN : INK }} />
++    <View class="w-[320px] h-[8px] flex-row gap-[2px]">
++      <Index each={blocks()}>
++        {(filled) => <View class="flex-1 h-[8px]" style={{ bgColor: filled() ? props.color : LINE }} />}
++      </Index>
+     </View>
+   );
+ }
+@@ -90,127 +36,91 @@ function ToolTab(props: {
+ export function SystemPage(props: SystemPageProps) {
+   const snapshot = () => props.snapshot;
+   const ram = () => ramUsage(props.snapshot);
+-  const usedMb = () => ram()?.usedMb ?? null;
+-  const totalMb = () => ram()?.totalMb ?? null;
+-  const cpuValue = () => [snapshot()?.frequency, snapshot()?.temperature].filter(Boolean).join("  ") || "--";
+-  let dataNode: NodeMirror | undefined;
+-
++  const cpu = () => snapshot()?.cpuUsagePercent ?? null;
++  const storage = () => snapshot()?.storagePercent ?? null;
++  let pageNode: NodeMirror | undefined;
+   createEffect(() => {
++    props.pageIndex;
+     props.snapshot;
+-    if (!dataNode) return;
+-    try {
+-      animate(dataNode, "opacity", 0.55, { dur: 0 });
+-      animate(dataNode, "opacity", 1, { dur: 150, easing: "out" });
+-    } catch {
+-      // The frame still contains current data when animation is unavailable.
+-    }
+-  });
+-  let tabsNode: NodeMirror | undefined;
+-
+-  createEffect(() => {
+-    props.selectedToolIndex;
+-    if (!tabsNode) return;
++    props.network;
++    if (!pageNode) return;
+     try {
+-      animate(tabsNode, "opacity", 0.55, { dur: 0 });
+-      animate(tabsNode, "opacity", 1, { dur: 150, easing: "out" });
++      animate(pageNode, "opacity", 0.7, { dur: 0 });
++      animate(pageNode, "opacity", 1, { dur: 120, easing: "out" });
+     } catch {
+-      // Selection remains visible without animation.
++      // Current page remains visible if animation is unavailable.
+     }
+   });
+ 
+   return (
+-    <View class="w-[360px] h-[198px] flex-col" style={{ bgColor: INK }}>
+-      <View class="h-[36px] flex-col px-2">
+-        <View class="flex-row items-center justify-between">
+-          <Text class="text-base font-bold tracking-wide" style={{ textColor: CYAN }}>
+-            SYSTEM
+-          </Text>
+-          <Text class="text-xs font-mono" style={{ textColor: AMBER }}>
+-            {text(snapshot()?.ramVariant)}
+-          </Text>
+-        </View>
+-        <Text class="text-xs font-mono" style={{ textColor: PALE }}>
+-          {text(snapshot()?.model)} · {text(snapshot()?.hardware)}
+-        </Text>
+-      </View>
+-      <View class="h-[1px] mx-2" style={{ bgColor: LINE }} />
++    <View class="w-[360px] h-[218px] flex-col px-3 py-1" style={{ bgColor: INK }}>
+ 
+-      <View class="h-[78px] flex-col" ref={(node: NodeMirror) => { dataNode = node; }}>
+-        <View class="h-[38px] flex-row">
+-          <Metric
+-            kind="cpu"
+-            color={CYAN}
+-            label="CPU"
+-            value={cpuValue()}
+-            meta={snapshot()?.cpu ?? "--"}
+-          />
+-          <View class="w-[1px] h-[29px]" style={{ bgColor: LINE }} />
+-          <Metric
+-            kind="ram"
+-            color={GREEN}
+-            label="RAM"
+-            value={usedMb() === null ? "--" : `${usedMb()} / ${totalMb()} MB`}
+-            meta={ram() === null ? "AVAILABLE --" : `USED ${ram()!.percent}%`}
+-            percent={ram()?.percent ?? null}
+-          />
+-        </View>
+-        <View class="h-[1px] mx-1" style={{ bgColor: LINE }} />
+-        <View class="h-[38px] flex-row">
+-          <Metric
+-            kind="storage"
+-            color={AMBER}
+-            label="STORAGE"
+-            value={snapshot()?.storageUsed && snapshot()?.storageTotal
+-              ? `${snapshot()!.storageUsed} / ${snapshot()!.storageTotal}`
+-              : "--"}
+-            meta={snapshot()?.storagePercent === null || snapshot()?.storagePercent === undefined
+-              ? "/STORAGE --"
+-              : `/STORAGE ${snapshot()!.storagePercent}%`}
+-            percent={snapshot()?.storagePercent ?? null}
+-          />
+-          <View class="w-[1px] h-[29px]" style={{ bgColor: LINE }} />
+-          <Metric
+-            kind="network"
+-            color={CYAN}
+-            label="NETWORK"
+-            value={text(props.ipAddress)}
+-            meta={props.wifiConnected ? "WIFI ON" : "WIFI OFF"}
+-          />
+-        </View>
+-      </View>
+-      <View class="h-[1px] mx-2" style={{ bgColor: LINE }} />
++      <View class="flex-1 flex-col justify-center gap-2 py-2" ref={(node: NodeMirror) => { pageNode = node; }}>
++        {props.pageIndex === 0 ? (
++          <View class="flex-col gap-2">
++            <Text class="text-xs font-mono" style={{ textColor: PALE }}>{text(snapshot()?.model)} · {text(snapshot()?.hardware)} · {text(snapshot()?.ramVariant)}</Text>
++            <View class="flex-row items-center justify-between">
++              <Text class="text-xs font-bold" style={{ textColor: CYAN }}>CPU</Text>
++              <Text class="text-base font-bold font-mono" style={{ textColor: PALE }}>{percentText(cpu())}</Text>
++            </View>
++            <Bar value={cpu()} color={CYAN} />
++            <View class="flex-row items-center justify-between">
++              <Text class="text-xs font-bold" style={{ textColor: GREEN }}>MEMORY</Text>
++              <Text class="text-sm font-bold font-mono" style={{ textColor: PALE }}>{ram() ? `${ram()!.usedMb} / ${ram()!.totalMb} MB` : "-- / -- MB"}</Text>
++            </View>
++            <Bar value={ram()?.percent} color={GREEN} />
++          </View>
++        ) : null}
+ 
+-      <View class="flex-1 flex-col justify-between px-2">
+-        <View class="flex-col" ref={(node: NodeMirror) => { tabsNode = node; }}>
+-          <View class="h-[14px] flex-row items-center justify-between">
+-            <Text class="text-xs font-bold tracking-wide" style={{ textColor: GREEN }}>TOOLS</Text>
+-            <Text class="text-xs" style={{ textColor: MUTED }}>◀▶ SELECT · A RUN</Text>
++        {props.pageIndex === 1 ? (
++          <View class="flex-col gap-3">
++            <Text class="text-xs font-bold tracking-wide" style={{ textColor: CYAN }}>CPU UTILIZATION</Text>
++            <Text class="text-lg font-bold" style={{ textColor: CYAN }}>{percentText(cpu())}</Text>
++            <Bar value={cpu()} color={CYAN} />
++            <View class="flex-row justify-between">
++              <Text class="text-sm" style={{ textColor: PALE }}>FREQUENCY {text(snapshot()?.frequency)}</Text>
++              <Text class="text-sm" style={{ textColor: AMBER }}>TEMP {text(snapshot()?.temperature)}</Text>
++            </View>
+           </View>
+-          <View class="h-[18px] flex-row">
+-            <Index each={props.systemTools.slice(0, 5)}>
+-              {(tool, index) => (
+-                <ToolTab tool={tool()} active={props.selectedToolIndex === index} />
+-              )}
+-            </Index>
++        ) : null}
++
++        {props.pageIndex === 2 ? (
++          <View class="flex-col gap-3">
++            <Text class="text-xs font-bold tracking-wide" style={{ textColor: GREEN }}>MEMORY</Text>
++            <Text class="text-lg font-bold" style={{ textColor: GREEN }}>{ram() ? `${ram()!.usedMb} / ${ram()!.totalMb} MB` : "-- / -- MB"}</Text>
++            <Bar value={ram()?.percent} color={GREEN} />
++            <View class="flex-row justify-between">
++              <Text class="text-sm" style={{ textColor: PALE }}>USED {percentText(ram()?.percent)}</Text>
++              <Text class="text-sm" style={{ textColor: MUTED }}>FREE {ram() ? `${ram()!.availableMb} MB` : "-- MB"}</Text>
++            </View>
++            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>RAW {text(snapshot()?.ramAvailableKb?.toString())} / {text(snapshot()?.ramTotalKb?.toString())} KB</Text>
+           </View>
+-          <View class="h-[18px] flex-row">
+-            <Index each={props.systemTools.slice(5, 9)}>
+-              {(tool, index) => (
+-                <ToolTab tool={tool()} active={props.selectedToolIndex === index + 5} />
+-              )}
+-            </Index>
+-            <View class="flex-1" />
++        ) : null}
++
++        {props.pageIndex === 3 ? (
++          <View class="flex-col gap-3">
++            <Text class="text-xs font-bold tracking-wide" style={{ textColor: AMBER }}>PERSISTENT STORAGE · /STORAGE</Text>
++            <Text class="text-lg font-bold" style={{ textColor: AMBER }}>{snapshot()?.storageUsed && snapshot()?.storageTotal ? `${snapshot()!.storageUsed} / ${snapshot()!.storageTotal}` : "-- / --"}</Text>
++            <Bar value={storage()} color={AMBER} />
++            <View class="flex-row justify-between">
++              <Text class="text-sm" style={{ textColor: PALE }}>USED {percentText(storage())}</Text>
++              <Text class="text-sm" style={{ textColor: MUTED }}>AVAILABLE SPACE</Text>
++            </View>
+           </View>
+-        </View>
++        ) : null}
+ 
+-        <View class="flex-col">
+-          <Text class="text-xs font-mono" style={{ textColor: MUTED }}>
+-            OS {compactOs(snapshot())} · KERNEL {compactKernel(snapshot())}
+-          </Text>
+-          <Text class="text-xs font-mono" style={{ textColor: AMBER }}>
+-            DISPLAY {text(snapshot()?.display)} · POCKETSHELL {text(snapshot()?.runtime)}
+-          </Text>
+-        </View>
++        {props.pageIndex === 4 ? (
++          <View class="flex-col gap-3">
++            <Text class="text-xs font-bold tracking-wide" style={{ textColor: CYAN }}>NETWORK</Text>
++            <Text class="text-lg font-bold" style={{ textColor: CYAN }}>{text(props.network.address)}</Text>
++            <View class="flex-row justify-between">
++              <Text class="text-sm font-bold" style={{ textColor: PALE }}>{text(props.network.interface)?.toUpperCase()}</Text>
++              <Text class="text-xs" style={{ textColor: props.network.connected ? GREEN : AMBER }}>{props.network.connected ? "WIFI CONNECTED" : "WIFI DISCONNECTED"}</Text>
++            </View>
++            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>OS {compactOs(snapshot())} · KERNEL {compactKernel(snapshot())}</Text>
++            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>DISPLAY {text(snapshot()?.display)} · {text(snapshot()?.runtime)}</Text>
++          </View>
++        ) : null}
+       </View>
+     </View>
+   );
+diff --git a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/status-bar.tsx b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/status-bar.tsx
+index d62dc4ba07..a54b03a6d2 100644
+--- a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/status-bar.tsx
++++ b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/status-bar.tsx
+@@ -6,8 +6,13 @@ export interface StatusBarProps {
+   ipAddress: string;
+   bluetoothOn: boolean;
+   batteryLevel: number;
++  sshEnabled: boolean;
++  adbEnabled: boolean;
++  mtpEnabled: boolean;
++  pageTitle?: string;
++  pageIndex?: number;
++  pageCount?: number;
+ }
+-
+ const WORKSPACES = ["HOME", "MEDIA", "GAMES", "SETUP", "SYSTEM"];
+ 
+ export function StatusBar(props: StatusBarProps) {
+@@ -25,18 +30,6 @@ export function StatusBar(props: StatusBarProps) {
+   return (
+     <View class="w-[360px] h-[22px] flex-col justify-between" style={{ bgColor: "#06111B" }}>
+       <View class="w-[360px] h-[21px] flex-row items-center justify-between px-2">
+-        <View class="flex-row items-center gap-1">
+-          <Text class="text-xs font-mono" style={{ textColor: props.wifiConnected ? "#00FF99" : "#41586B" }}>
+-            {"\uf1eb"}
+-          </Text>
+-          <Text class="text-xs font-mono" style={{ textColor: props.bluetoothOn ? "#3ECFFF" : "#41586B" }}>
+-            {"\uf293"}
+-          </Text>
+-          <Text class="text-xs font-mono" style={{ textColor: "#D8E8FF" }}>
+-            {props.wifiConnected ? props.ipAddress : "--"}
+-          </Text>
+-        </View>
+-
+         <View class="flex-row items-center gap-1">
+           <Text class="text-xs font-mono" style={{ textColor: "#7893A8" }}>WS</Text>
+           <Text class="text-xs font-bold font-mono" style={{ textColor: "#3ECFFF" }}>
+@@ -45,18 +38,26 @@ export function StatusBar(props: StatusBarProps) {
+           <Text class="text-xs font-bold tracking-wide" style={{ textColor: "#00FF99" }}>
+             {WORKSPACES[props.currentScreen] ?? "--"}
+           </Text>
++          {props.pageTitle ? <Text class="text-xs font-bold" style={{ textColor: "#3ECFFF" }}>{props.pageTitle}</Text> : null}
++          {props.pageCount ? <Text class="text-xs font-mono" style={{ textColor: "#7893A8" }}>{props.pageIndex! + 1}/{props.pageCount}</Text> : null}
+         </View>
+ 
+-        <View class="flex-row items-center gap-1">
++        <View class="flex-row items-center gap-1 px-1">
++          <Text class="text-xs font-mono" style={{ textColor: props.wifiConnected ? "#00FF99" : "#41586B" }}>
++            {"\uf1eb"}
++          </Text>
++          <Text class="text-xs font-mono" style={{ textColor: props.bluetoothOn ? "#3ECFFF" : "#41586B" }}>
++            {"\uf293"}
++          </Text>
++          <Text class="text-xs font-mono" style={{ textColor: props.sshEnabled ? "#00FF99" : "#7893A8" }}>{"\uf120"}</Text>
++          <Text class="text-xs font-mono" style={{ textColor: props.adbEnabled ? "#3ECFFF" : "#7893A8" }}>{"\uf287"}</Text>
++          <Text class="text-xs font-mono" style={{ textColor: props.mtpEnabled ? "#3ECFFF" : "#7893A8" }}>{"\uf07b"}</Text>
+           <Text
+             class="text-xs font-mono"
+             style={{ textColor: !batteryKnown() ? "#41586B" : props.batteryLevel > 20 ? "#00FF99" : "#FFB400" }}
+           >
+             {batteryIcon()}
+           </Text>
+-          <Text class="text-xs font-mono" style={{ textColor: "#D8E8FF" }}>
+-            {batteryKnown() ? `${props.batteryLevel}%` : "--"}
+-          </Text>
+         </View>
+       </View>
+       <View class="w-[360px] h-[1px]" style={{ bgColor: "#1B3345" }} />
+diff --git a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/system-status.ts b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/system-status.ts
+index ce416fc0e9..a42e41ee1c 100644
+--- a/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/system-status.ts
++++ b/projects/ROCKNIX/packages/apps/pocketjs-runtime/hello/system-status.ts
+@@ -2,6 +2,7 @@ export interface SystemSnapshot {
+   model: string | null;
+   hardware: string | null;
+   cpu: string | null;
++  cpuUsagePercent: number | null;
+   ramVariant: string | null;
+   osName: string | null;
+   osVersion: string | null;
+@@ -18,6 +19,12 @@ export interface SystemSnapshot {
+   runtime: string | null;
+ }
+ 
++export interface NetworkSnapshot {
++  interface: string | null;
++  address: string | null;
++  connected: boolean;
++}
++
+ const numeric = (value: string | undefined) => {
+   const parsed = Number(value);
+   return Number.isFinite(parsed) ? parsed : null;
+@@ -31,12 +38,14 @@ export function parseSystemSnapshot(payload: string): SystemSnapshot | null {
+     if (split <= 0) continue;
+     fields.set(line.slice(0, split), line.slice(split + 1));
+   }
+-  if (fields.size === 0) return null;
++  if (!fields.has("model") && !fields.has("hardware") && !fields.has("os") && !fields.has("kernel")) return null;
+   const text = (key: string) => fields.get(key)?.trim() || null;
++  const cpuUsagePercent = numeric(fields.get("cpuUsagePercent"));
+   return {
+     model: text("model"),
+     hardware: text("hardware"),
+     cpu: text("cpu"),
++    cpuUsagePercent: cpuUsagePercent === null ? null : Math.max(0, Math.min(100, cpuUsagePercent)),
+     ramVariant: text("ramVariant"),
+     osName: text("osName"),
+     osVersion: text("osVersion"),
+@@ -54,6 +63,16 @@ export function parseSystemSnapshot(payload: string): SystemSnapshot | null {
+   };
+ }
+ 
++export function parseNetworkSnapshot(ipPayload: string, wifiPayload: string): NetworkSnapshot {
++  const [iface, address] = ipPayload.trim().split("|", 2);
++  const validAddress = address && address !== "--" ? address : null;
++  return {
++    interface: validAddress ? iface || null : null,
++    address: validAddress,
++    connected: wifiPayload.trim() === "on",
++  };
++}
++
+ export function ramUsage(snapshot: SystemSnapshot | null) {
+   const total = snapshot?.ramTotalKb;
+   const available = snapshot?.ramAvailableKb;
