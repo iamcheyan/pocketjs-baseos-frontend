@@ -41,13 +41,17 @@ exec docker run --rm --platform linux/arm64 \
           | sh -s -- -y --profile minimal --default-toolchain 1.93.0 \
               --target aarch64-unknown-linux-musl
         . /usr/local/cargo/env
+        python3 /workspace/tools/pocket-runtime-patch/patch-runtime.py /workspace/.build/pocketjs
         python3 /workspace/tools/prepare-runtime-workspace.py /workspace/.build/pocketjs
         if [ -f /workspace/tools/pocketjs-linux-kms.Cargo.lock ]; then
           cp /workspace/tools/pocketjs-linux-kms.Cargo.lock Cargo.lock
         else
           cargo +1.93.0 generate-lockfile
-          cp Cargo.lock /workspace/tools/pocketjs-linux-kms.Cargo.lock
         fi
+        if ! cargo +1.93.0 metadata --locked --format-version 1 >/dev/null 2>&1; then
+          cargo +1.93.0 generate-lockfile
+        fi
+        cp Cargo.lock /workspace/tools/pocketjs-linux-kms.Cargo.lock
         cargo +1.93.0 build --locked --release \
           --target aarch64-unknown-linux-musl \
           --package pocket-linux-kms --no-default-features

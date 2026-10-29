@@ -151,6 +151,42 @@ Payload rebuilt as `dist/sdcard-payload.tar.gz` (sha256
 `e04b493aac8276d7ffa58e16b85c6298fb42a2ffc776f4905d177518b755d833`).
 M3 complete.
 
+## M4 state and settings record (2026-10-30)
+
+The runtime now embeds the PocketShell bridge from the ROCKNIX reference
+(terminal, launcher, library) and `System/compat/bin` supplies BaseOS
+equivalents. Full command/return table: `docs/evidence/M4-state.txt`.
+
+Verified direct commands:
+
+```text
+amixer get Master                         -> 100%
+heya-control volume 40                    -> exit 0; amixer became 40%
+rocknix-settings ... brightness ... 40    -> exit 0; enhance_bright read 40
+rocknix-services status ssh.enabled       -> ssh.enabled=1
+rocknix-services status adbusb.enabled    -> adbusb.enabled=1
+rocknix-services status avahi.enabled     -> avahi.enabled=0
+systemctl is-active simple-mtpfs.service  -> exit 3 (inactive)
+systemctl try-restart pocketjs-sleep...   -> exit 0
+axp2202-battery/capacity                  -> 100
+LEVEL wifi / LEVEL ip                     -> off / -- (wlan0 down, only lo)
+```
+
+UI evidence:
+
+- `docs/evidence/m4-settings.png`: Brightness 50% (vendor
+  `enhance_bright`), Volume 100%, Wi-Fi/Bluetooth OFF, timeout 30m, SSH
+  enabled.
+- `docs/evidence/m4-volume40.png`: after `heya-control volume 40`, the UI
+  shows Volume 40%.
+- `docs/evidence/m4-system.png`: CPU 1512MHz/52C, RAM 76/997MB, storage
+  0.1/27.5G, network off, DISPLAY 720x480, BaseOS 1.4.0.
+- `docs/evidence/m4-home.png`: battery 100% and bridge status bar.
+
+Brightness uses the vendor `enhance_bright` node because BaseOS has no
+backlight class; Wi-Fi/BT control and MTP are reported as unavailable/inactive
+rather than fabricated. M4 complete.
+
 ## Recovery
 
 

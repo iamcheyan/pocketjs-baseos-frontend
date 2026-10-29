@@ -16,6 +16,9 @@ mkdir -p "$STAGE/System/pocketjs/bin" "$STAGE/System/pocketjs/apps"
 cp "$ROOT/System/launch_frontend.sh" "$STAGE/System/launch_frontend.sh"
 cp "$IN/pocket-linux-kms" "$STAGE/System/pocketjs/bin/pocket-linux-kms"
 cp "$IN/boot.pocket" "$STAGE/System/pocketjs/apps/boot.pocket"
+if [ -d "$ROOT/System/compat" ]; then
+    cp -a "$ROOT/System/compat" "$STAGE/System/compat"
+fi
 chmod 0755 "$STAGE/System/launch_frontend.sh" "$STAGE/System/pocketjs/bin/pocket-linux-kms"
 {
     printf 'Runtime source: inputs/pocket-linux-kms\n'

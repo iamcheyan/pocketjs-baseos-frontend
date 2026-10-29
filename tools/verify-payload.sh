@@ -15,6 +15,11 @@ fi
 find "$ROOT/System" "$ROOT/tools" -type f -name '*.sh' -print | while IFS= read -r script; do
     sh -n "$script" || fail "shell syntax failed: $script"
 done
+if [ -d "$ROOT/System/compat" ]; then
+    find "$ROOT/System/compat" -type f -print | while IFS= read -r shim; do
+        sh -n "$shim" || fail "compat syntax failed: $shim"
+    done
+fi
 
 if command -v busybox >/dev/null 2>&1; then
     busybox sh -n "$ROOT/System/launch_frontend.sh" || fail 'busybox ash syntax failed'

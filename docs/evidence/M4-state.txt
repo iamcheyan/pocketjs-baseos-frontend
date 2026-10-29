@@ -1,0 +1,65 @@
+M4 device-state evidence (2026-10-30)
+
+Bridge: pinned PocketJS runtime patched with the ROCKNIX
+`pocketshell-terminal.rs`, `pocketshell-launcher.rs`, `pocketshell-library.rs`
+and `patch-runtime.py`; rebuilt for aarch64-musl. The bridge calls
+`/usr/bin/timeout` and PATH-resolved tools. `System/launch_frontend.sh`
+prepends `System/compat/bin` and binds `/mnt/sdcard` at `/storage`.
+
+Direct device commands (PATH=/mnt/sdcard/System/compat/bin:$PATH):
+
+  $ amixer get Master | tail -2
+    Limits: 0 - 63
+    Mono: 63 [100%]
+
+  $ heya-control volume 40
+  exit 0
+  $ amixer get Master | tail -2
+    Mono: 25 [40%]
+  (then restored to 100%)
+
+  $ rocknix-settings --command set --key brightness --value 40
+  exit 0
+  $ cat /sys/class/disp/disp/attr/enhance_bright
+  40 40
+  (then restored to 50)
+
+  $ rocknix-services status ssh.enabled
+  ssh.enabled=1
+  $ rocknix-services status adbusb.enabled
+  adbusb.enabled=1
+  $ rocknix-services status avahi.enabled
+  avahi.enabled=0
+
+  $ systemctl is-active simple-mtpfs.service
+  (no output, exit 3 = inactive)
+  $ systemctl try-restart pocketjs-sleep.service
+  exit 0 (no systemd daemon; setting persistence is handled by the bridge)
+
+  $ cat /sys/class/power_supply/axp2202-battery/capacity
+  100
+  $ cat /sys/class/net/wlan0/operstate
+  down
+  $ ip -o -4 addr show
+  1: lo    inet 127.0.0.1/8 scope host lo ...
+  -> LEVEL wifi = off, LEVEL ip = -- (truthful; no wpa_supplicant socket)
+
+Brightness note: BaseOS has no /sys/class/backlight and no /sys/class/leds.
+The vendor display driver exposes the writable node
+`/sys/class/disp/disp/attr/enhance_bright`; the bridge reads its first integer
+for LEVEL brightness and `rocknix-settings` writes it for CONTROL brightness.
+The value reads back correctly (40 -> "40 40"); a framebuffer capture cannot
+measure panel luminance, so this is reported as the vendor brightness node,
+not as a standard backlight.
+
+UI evidence:
+  docs/evidence/m4-home.png      status bar: battery 100%, SSH/ADB shown
+  docs/evidence/m4-system.png    CPU 1512MHz/52C, RAM 76/997MB, STORAGE 0.1/27.5G,
+                                 NETWORK Wi-Fi OFF, DISPLAY 720x480, BaseOS 1.4.0
+  docs/evidence/m4-settings.png  Brightness 50%, Volume 100%, Wi-Fi/BT OFF,
+                                 Screen Timeout 30m, SSH ENABLED
+  docs/evidence/m4-volume40.png  Volume changed to 40% and UI followed
+
+Known limits: Wi-Fi control has no wpa_supplicant control socket on this boot;
+Bluetooth control fails because bluetoothctl cannot reach D-Bus. Both are
+reported as failures rather than fabricated state. MTP reports inactive.

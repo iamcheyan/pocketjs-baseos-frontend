@@ -124,21 +124,21 @@ exercised on BaseOS hardware.
 
 ## Compatibility-layer implementation status
 
-The current entry script performs a best-effort SD-root bind mount at
-`/storage`. `tools/build-compatibility-layer.sh` stages a draft
-`pocketshell-games` JSON generator and service-status helper under ignored
-`dist/compat/`; it does not install them into BaseOS or claim device support.
-The generator follows the old bridge's `{"sections":{"games":[...]} ,"total":N}`
-catalogue contract and passed a small isolated fixture check.
+The entry script creates `/storage` when needed and bind-mounts the SD root
+there. `System/compat/bin` supplies BaseOS equivalents for `amixer`
+(Master→digital volume), `heya-control`, `rocknix-services`,
+`rocknix-settings` (vendor `enhance_bright`) and `systemctl` probes. The
+runtime is rebuilt with the ROCKNIX PocketShell bridge modules so
+`LEVEL`, `STATE`, `CONTROL`, `SERVICE`, `SLEEP`, `LANGUAGE`, `ROMS`,
+`ROMSCAN` and `ROMLAUNCH` reach those commands.
 
-The upstream `pocketshell-play` invokes `pocket-session-run`, which owns display
-and service handover. A direct child runtime launch while the frontend still
-holds DRM is unsafe; game launch remains a later task after ownership and init
-respawn are proven on target hardware.
+The `pocketshell-games` scanner and `pocketshell-play` are not installed yet:
+the scanner still needs its BusyBox rewrite, and game launch requires a safe
+display/input handover. These remain M5 work.
 
-Stage 2 status: **not complete**. See [ROADMAP.md](ROADMAP.md). BaseOS
-systemctl integration, scanner target validation, audio semantics, and game
-launch/return remain unverified.
+Stage 2 status: **partially complete**. Device state/settings are verified;
+scanner target validation, audio semantics, and game launch/return remain
+unverified.
 
 ## Source and package baseline
 

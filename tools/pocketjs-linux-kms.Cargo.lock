@@ -180,6 +180,7 @@ dependencies = [
 name = "pocket-guest-rquickjs"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "pocket-drivers",
  "pocket-runtime",
  "pocketjs-core",

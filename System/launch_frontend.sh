@@ -106,6 +106,14 @@ else
     input_args=
 fi
 
+if [ ! -d /storage ]; then
+    if mkdir -p /storage 2>/dev/null; then
+        log "created /storage mount point"
+    else
+        log "WARNING: could not create /storage mount point"
+    fi
+fi
+
 if [ -d /storage ] && command -v mountpoint >/dev/null 2>&1 \
     && ! mountpoint -q /storage 2>/dev/null; then
     if mount --bind "$SD" /storage >> "$LOG" 2>&1; then
