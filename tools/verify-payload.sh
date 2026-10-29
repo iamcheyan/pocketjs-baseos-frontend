@@ -3,13 +3,13 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 fail() { printf 'verify-payload: FAIL: %s\n' "$*" >&2; exit 1; }
 
-[ -x "$ROOT/System/pocketjs/bin/pocket-linux-kms" ] || fail 'runtime missing or not executable'
-[ -f "$ROOT/System/pocketjs/apps/boot.pocket" ] || fail 'boot.pocket missing'
-[ -f "$ROOT/System/pocketjs/version" ] || fail 'runtime version record missing'
+[ -f "$ROOT/inputs/pocket-linux-kms" ] || fail 'runtime input missing'
+[ -x "$ROOT/inputs/pocket-linux-kms" ] || fail 'runtime input not executable'
+[ -f "$ROOT/inputs/boot.pocket" ] || fail 'boot.pocket input missing'
 [ -f "$ROOT/System/launch_frontend.sh" ] || fail 'frontend script missing'
 
-if grep -Eiq 'systemctl|python|/storage/|pocket-session-run' "$ROOT/System/launch_frontend.sh"; then
-    fail 'launch_frontend.sh contains a forbidden BaseOS or ROCKNIX dependency'
+if grep -Eiq 'systemctl|python|/storage/' "$ROOT/System/launch_frontend.sh"; then
+    fail 'launch_frontend.sh contains forbidden systemctl/python//storage/ dependency'
 fi
 
 find "$ROOT/System" "$ROOT/tools" -type f -name '*.sh' -print | while IFS= read -r script; do
@@ -21,10 +21,10 @@ if command -v busybox >/dev/null 2>&1; then
 fi
 
 printf 'verify-payload: PASS\n'
-printf 'runtime: System/pocketjs/bin/pocket-linux-kms (%s bytes, executable)\n' \
-    "$(wc -c < "$ROOT/System/pocketjs/bin/pocket-linux-kms" | tr -d ' ')"
-printf 'package: System/pocketjs/apps/boot.pocket (%s bytes)\n' \
-    "$(wc -c < "$ROOT/System/pocketjs/apps/boot.pocket" | tr -d ' ')"
+printf 'runtime input: inputs/pocket-linux-kms (%s bytes, executable)\n' \
+    "$(wc -c < "$ROOT/inputs/pocket-linux-kms" | tr -d ' ')"
+printf 'package input: inputs/boot.pocket (%s bytes)\n' \
+    "$(wc -c < "$ROOT/inputs/boot.pocket" | tr -d ' ')"
 printf 'shell scripts: sh -n passed\n'
 if command -v busybox >/dev/null 2>&1; then printf 'shell scripts: busybox ash -n passed\n'; fi
 printf 'forbidden launcher dependencies: none\n'

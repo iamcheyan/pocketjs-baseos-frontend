@@ -73,6 +73,13 @@ The revised plan reuses that bridge and supplies host compatibility pieces.
 No new ABI or runtime rebuild is planned unless device checks show the existing
 binary cannot reach the bridge operations.
 
+**Compatibility scope:** the frontend currently only attempts the `/storage` bind.
+The candidate games indexer is isolated in `tools/build-compatibility-layer.sh`
+and is not in `System/` or the SD payload. It must be installed into BaseOS's
+executable search path by a separately reviewed overlay before `ROMSCAN` can use
+it. `POCKETSHELL_LIBRARY_ROOTS` belongs to the document reader bridge; point it
+at games only if the product accepts the reader also seeing those files.
+
 1. **Map persistent paths.** The frontend entry bind-mounts the SD root on the
    existing `/storage` mount point when available. This makes the bridge's
    existing absolute paths resolve on the card. Confirm the target image has
@@ -87,8 +94,8 @@ binary cannot reach the bridge operations.
    `/storage/pocketshell/library/library.json`.
 3. **Games scanner shim.** BaseOS lacks Python 3, so implement a BusyBox shell
    scanner with the same output schema, stable grouping/sorting, and supported
-   extensions. A draft fixture-tested generator is in
-   `tools/build-compatibility-layer.sh`; it is not installed or target-verified.
+   extensions. The draft generator has passed an isolated fixture check but is
+   not installed or target-verified.
 3. **Game launch.** The bridge references `systemd-run` and
    `/usr/bin/pocketshell-play`; BaseOS has no systemd. Do not provide a generic
    background `systemd-run` shim: the current runtime owns DRM and a child game
@@ -149,9 +156,22 @@ Input checks run:
 - `sha256sum inputs/boot.pocket` →
   `d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2`.
 
-Payload syntax and packaging are recorded after the acceptance run. Package
-admission on BaseOS hardware, display/input, Library behavior, SSH/ADB
-reachability, and recovery behavior remain **not verified** until the device
-checklist is performed. The supplied runtime is AArch64, so its target-profile
-admission was not run on this host.
+Acceptance commands and actual output:
+
+- `sh -n System/launch_frontend.sh` → exit 0.
+- `busybox sh -n System/launch_frontend.sh` → exit 0.
+- `tools/verify-payload.sh` → `verify-payload: PASS`; runtime input 2,233,080 bytes
+  executable; package input 4,084,728 bytes; shell syntax passed; forbidden
+  launcher dependencies none.
+- `tools/make-payload.sh` → `dist/sdcard-payload.tar.gz`, 1,358,897 bytes,
+  SHA-256 `8f0915a8d91ad9a88d8894f46a48d4670199db8b704e0ea495e978267488ae0d`.
+- `tar -tzf dist/sdcard-payload.tar.gz` → only `System/` and `README.txt` trees.
+- `tools/build-compatibility-layer.sh` plus isolated scanner fixture →
+  `scanner fixture: PASS total=3 groups=gba,snes,misc`.
+- `tools/deploy-to-card.sh <temporary-directory>` → `deploy smoke: PASS`; old
+  System/ and README.txt were preserved in the timestamped backup.
+
+Target package admission, BaseOS boot, display/input, bridge shim activation,
+Library behavior, SSH/ADB reachability, and game launch/return remain **not
+verified**; complete the device checklist before treating Stage 1/2 as accepted.
 

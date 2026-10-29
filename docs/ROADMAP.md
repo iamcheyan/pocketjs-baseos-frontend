@@ -33,33 +33,17 @@ runtime 字符串表已确认包含 `__pocketshell`、`__launcher`、
 `pactl` 和 `amixer`。这证明代码被编进二进制，不代表对应宿主命令在
 BaseOS 上已经可用。详细方案见 [MIGRATION.md](MIGRATION.md#stage-2-existing-pocketshell-bridge-compatibility-layer)。
 
-实施项：
+当前交付：frontend best-effort `/storage` bind；`tools/build-compatibility-layer.sh`
+可生成 games JSON scanner 和服务状态辅助脚本。scanner 已通过一个隔离 fixture；
+两个 helper 尚未安装进 BaseOS PATH，也未在设备验证。
 
-1. 验证 `/mnt/sdcard` 到 `/storage` 的 bind mount；两处须是同一卡根视图。
-2. document Library 用 `POCKETSHELL_LIBRARY_ROOTS` / `POCKETSHELL_LIBRARY_DATA_ROOT`
-   指定根与状态目录。该变量属于文件阅读 bridge，不是 games scanner 开关。
-3. games bridge 的 `ROMSCAN` 实际执行 `/usr/bin/pocketshell-games scan` 并返回
-   它的 stdout。BaseOS 没有 python3，需实现输出兼容的 shell scanner shim，或确认
-   提供的源码/运行时分支里存在可用的直接扫描实现；不得假定环境变量绕过 scanner。
-4. `ROMLAUNCH` 调用 `systemd-run --unit=pocketshell-game --collect --no-block`
-   启动 `pocketshell-play`。实现窄范围兼容 shim 前，先确认 game runner 如何释放
-   frontend DRM/input，并验证游戏退出后 init 能 respawn frontend。
-5. 根据 BaseOS 实际进程扩展 systemctl 状态映射；按实际安装的音频工具适配
-   `pactl`/`amixer`。每个设置状态都需实机验证。
+仍未实现/验证：BaseOS systemctl shim 集成、音量适配、游戏运行时交接、games
+目录实机索引及 A 启动/退出回到 launcher。child runner 依赖 `pocket-session-run`
+管理显示与服务交接；直接从仍持有 DRM 的前台启动第二个 runtime 可能冲突。
+没有用通用后台 `systemd-run` 伪装成功。
 
-当前状态：只完成启动脚本中的 best-effort `/storage` bind mount 与规划；
-Library index、systemd-run shim、游戏启动、服务及音频适配都未实现或验证。
-不能把 strings 证据当作功能验收。
-
----
-
-### 阶段二验收
-
-- `games/gba/*.gba`、`games/*.pocket` 出现在 Library 预期分组，排序和计数正确。
-- 启动游戏后退出，BaseOS init 能重新进入 launcher，DRM/input 无冲突。
-- 状态栏及设置页显示 BaseOS 实际服务和音频状态，不把缺失服务报告为已启用。
-
-以上均未在目标设备验证。
+验收标准：`games/gba/*.gba` 与根目录 `.pocket` 在 Library 分组正确；游戏可启动并
+返回 launcher；状态栏/设置显示真实 BaseOS 状态。以上均未实机验证。
 
 ## 阶段三：开发基础设施（用户指定）
 
