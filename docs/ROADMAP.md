@@ -3,36 +3,25 @@
 目标状态：插一张卡开机，BaseOS 直接进 PocketJS 卡片启动器，功能和现在 ROCKNIX 上一致，
 并且 SSH / ADB / MTP / 浏览器远程调试这些开发基础设施都能用。
 
-关键前提（已用 `strings` 从 `inputs/pocket-linux-kms` 验证，不是推测）：
-**我们手上的 runtime 二进制本身已经编入了 PocketShell bridge**，包括
-
-```
-__pocketshell  __launcher
-POCKETSHELL_LIBRARY_ROOTS   POCKETSHELL_LIBRARY_DATA_ROOT
-/storage/pocketshell/library/library.json
-/usr/bin/pocketshell-games  /usr/bin/pocketshell-play
-systemd-run --unit=pocketshell-game ... / systemctl / pactl / amixer
-adbd.enabled adb usb.enabled ssh.enabled avahi ftp http rsyncd samba syncthing telnet pocketshell-dev.enabled
-```
-
-所以**不需要重新设计 ABI、不需要重编 runtime 就能恢复大部分功能**。
-二期的工作量集中在"把 bridge 依赖的宿主接口补齐"，而不是改 Rust。
+当前 runtime 的 AArch64 字符串表含有 PocketShell bridge 操作名、宿主命令和路径。
+这是编译内容的证据，不是 BaseOS 上 bridge 已可用的验收证据。兼容层须按
+现有 bridge 合约补齐宿主接口，不预设每项命令可直接工作。
 
 ---
 
-## 阶段一：能开机进 PocketJS（进行中）
+## 阶段一：能开机进 PocketJS（交付待实机验证）
 
-交付物已经在 `System/` `tools/` `docs/` 里，payload 由 `tools/make-payload.sh` 生成。
+payload 由 `tools/make-payload.sh` 生成。当前 workspace 的静态检查和归档已完成；
+BaseOS 实机启动、package admission、DRM 画面与按键还没有验证。
 
 | 依赖 | 状态 |
 |---|---|
-| BaseOS 镜像 rg34xx | HX90 构建中（`build-tools → rootfs → qemu smoke → image`） |
-| `System/launch_frontend.sh` | 完成（含 DRM 探测、admission 检查、失败退避、`/storage` bind mount） |
-| runtime + 包 | `inputs/` 里现成，admission 已验证 `rocknix-h700-kms` |
-| 镜像内 `/storage` 挂载点 | 已加 `PJOS-LINUX/overlay/storage/.keep`（根目录只读，必须预留） |
+| `System/launch_frontend.sh` | 已实现 DRM 探测、package `--check`、`/storage` best-effort bind、失败退避 |
+| runtime + approved package | 从 inputs 组包；目标机 admission 未验证 |
+| BaseOS `/storage` mount point | 需确认目标镜像提供目录及 mount 权限 |
 
-验收标准：插卡开机 → 出现卡片启动器 HOME 页（Terminal / Files / XMPlayer + 顶部状态栏），
-`/tmp/pocketjs-frontend.log` 里能看到 `bound /mnt/sdcard -> /storage` 和 runtime 启动记录。
+验收：插卡进入批准版 HOME 卡片界面，日志记录 admission、bind mount、DRM card 和退出码。
+设备步骤见 [DEVICE-CHECKLIST.md](DEVICE-CHECKLIST.md)。
 
 ---
 
@@ -46,13 +35,17 @@ BaseOS 上已经可用。详细方案见 [MIGRATION.md](MIGRATION.md#stage-2-exi
 
 实施项：
 
-1. 验证并使用 frontend 的 `/mnt/sdcard` → `/storage` bind mount。
-2. 追踪 `POCKETSHELL_LIBRARY_ROOTS` 的真实消费路径；确认能跳过
-   `pocketshell-games` 后才采用直接扫描，否则写 BusyBox shell index shim。
-3. 为游戏退出回到 frontend 设计窄范围 `systemd-run` / `pocketshell-play`
-   兼容路径；必须验证 DRM/input 所有权及 init respawn 时序。
-4. 按 BaseOS 实际进程和音频接口扩展 systemctl、pactl/amixer 适配，逐项
-   确认设置页显示真实状态。
+1. 验证 `/mnt/sdcard` 到 `/storage` 的 bind mount；两处须是同一卡根视图。
+2. document Library 用 `POCKETSHELL_LIBRARY_ROOTS` / `POCKETSHELL_LIBRARY_DATA_ROOT`
+   指定根与状态目录。该变量属于文件阅读 bridge，不是 games scanner 开关。
+3. games bridge 的 `ROMSCAN` 实际执行 `/usr/bin/pocketshell-games scan` 并返回
+   它的 stdout。BaseOS 没有 python3，需实现输出兼容的 shell scanner shim，或确认
+   提供的源码/运行时分支里存在可用的直接扫描实现；不得假定环境变量绕过 scanner。
+4. `ROMLAUNCH` 调用 `systemd-run --unit=pocketshell-game --collect --no-block`
+   启动 `pocketshell-play`。实现窄范围兼容 shim 前，先确认 game runner 如何释放
+   frontend DRM/input，并验证游戏退出后 init 能 respawn frontend。
+5. 根据 BaseOS 实际进程扩展 systemctl 状态映射；按实际安装的音频工具适配
+   `pactl`/`amixer`。每个设置状态都需实机验证。
 
 当前状态：只完成启动脚本中的 best-effort `/storage` bind mount 与规划；
 Library index、systemd-run shim、游戏启动、服务及音频适配都未实现或验证。
@@ -60,33 +53,13 @@ Library index、systemd-run shim、游戏启动、服务及音频适配都未实
 
 ---
 
-### 2.3 启动游戏（`systemd-run` 缺失）
+### 阶段二验收
 
-bridge 用 `systemd-run --unit=pocketshell-game --collect --no-block <play ...>` 起游戏。
-BaseOS 没有 systemd-run，需要 shim：
+- `games/gba/*.gba`、`games/*.pocket` 出现在 Library 预期分组，排序和计数正确。
+- 启动游戏后退出，BaseOS init 能重新进入 launcher，DRM/input 无冲突。
+- 状态栏及设置页显示 BaseOS 实际服务和音频状态，不把缺失服务报告为已启用。
 
-```sh
-# /usr/bin/systemd-run  (BaseOS shim)
-# 忽略 --unit/--collect/--no-block，把剩余命令放后台跑，立刻返回成功
-```
-
-同时 `pocketshell-play` 原实现依赖 `pocket-session-run` + systemd 的显示锁，
-BaseOS 上要改成：停掉 frontend（或者直接让 frontend 退出）→ 跑子包 → 退出后由 init
-respawn 回到启动器。**这是二期最容易出问题的一环**，要单独验证"启动游戏 → 退游戏 → 回启动器"。
-
-### 2.4 状态与控制
-
-| bridge 调用 | BaseOS 现状 | 处理 |
-|---|---|---|
-| `systemctl is-active adbd/ssh/avahi/...` | 有 shim，但只认真实 unit，其余返回 3 | 扩展 shim：按 `pidof` 判断 adbd/dropbear/avahi-daemon |
-| `systemctl try-restart pocketjs-sleep.service` | shim 返回 0（noop） | 可接受；休眠另做 |
-| `pactl get-sink-volume` / `amixer` | 需确认是否安装 | 优先 `amixer sget`，pactl 用 shim 包装 |
-| `/sys/class/backlight`、`/sys/class/power_supply` | 内核自带 | 直接可用，无需处理 |
-| `/storage/.config/system/configs/system.cfg` | 无 | 首次启动生成默认值即可 |
-
-验收：状态栏电池/亮度/WiFi 显示真实值；设置页里 SSH/ADB 开关能反映真实进程状态。
-
----
+以上均未在目标设备验证。
 
 ## 阶段三：开发基础设施（用户指定）
 

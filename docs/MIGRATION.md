@@ -48,15 +48,16 @@ inside the current Linux KMS runtime.
 
 Evidence for package switching:
 
-- `programs/linux-kms/src/main.rs` parses `--package` once, opens/admission-checks
-  that one package, boots one guest, and ticks it until exit.
+- `programs/linux-kms/src/main.rs` accepts one package at process start and
+  boots/ticks that guest; no app-switch operation provider is registered.
 - `framework/src/launcher.ts` treats `appTable` and `appLaunch` as optional host
   operations; absent operations return null/false.
-- `docs/LAUNCHER.md` specifies that switching is host-provided, not an app-side
-  process primitive.
+- The compiled bridge's `ROMLAUNCH` path calls `systemd-run` with
+  `pocketshell-play`; a BaseOS shim must preserve frontend DRM release and init
+  respawn. The supplied runtime strings alone do not prove this workflow works.
 
-These are explicit first-stage limitations. No fake A-button launch behavior
-is added for Library entries.
+No game launch is reported as supported until the compatibility commands are
+implemented and the launch/return flow passes on device.
 
 ## Stage 2: existing PocketShell bridge compatibility layer
 
@@ -78,14 +79,16 @@ binary cannot reach the bridge operations.
    `/storage`, `mountpoint`, and permission for `mount --bind`; the script logs
    success/failure. A failed bind leaves the launcher able to start but does
    not provide working persistent bridge data.
-2. **Library index.** Configure `POCKETSHELL_LIBRARY_ROOTS` to the card's games
-   directory only after verifying from the compiled bridge/source that this
-   variable bypasses `/usr/bin/pocketshell-games`. The runtime string table
-   proves the variable name and helper path exist, not that the helper can be
-   skipped. If the bridge does invoke the helper, provide a BusyBox shell
-   implementation that emits the expected index format; Python is unavailable
-   on BaseOS and must not be introduced. Preserve root-level `.pocket` as
-   `misc`, sort groups/files stably, and verify counts on device.
+2. **Library roots and games index are separate.** `POCKETSHELL_LIBRARY_ROOTS` and
+   `POCKETSHELL_LIBRARY_DATA_ROOT` configure the document reader bridge; upstream
+   `pocketshell-library.rs` confirms this. They do not bypass the games scanner.
+   The games bridge's `ROMSCAN` executes `/usr/bin/pocketshell-games scan` and
+   returns stdout; the upstream scanner writes `sections.games` to
+   `/storage/pocketshell/library/library.json`.
+3. **Games scanner shim.** BaseOS lacks Python 3, so implement a BusyBox shell
+   scanner with the same output schema, stable grouping/sorting, and supported
+   extensions. A draft fixture-tested generator is in
+   `tools/build-compatibility-layer.sh`; it is not installed or target-verified.
 3. **Game launch.** The bridge references `systemd-run` and
    `/usr/bin/pocketshell-play`; BaseOS has no systemd. Do not provide a generic
    background `systemd-run` shim: the current runtime owns DRM and a child game
@@ -110,6 +113,23 @@ is a compatibility-layer task, not a new-ABI project; its Library and game
 launch acceptance remains unverified until the bridge shims are implemented and
 exercised on BaseOS hardware.
 
+## Compatibility-layer implementation status
+
+The current entry script performs a best-effort SD-root bind mount at
+`/storage`. `tools/build-compatibility-layer.sh` stages a draft
+`pocketshell-games` JSON generator and service-status helper under ignored
+`dist/compat/`; it does not install them into BaseOS or claim device support.
+The generator follows the old bridge's `{"sections":{"games":[...]},"total":N}`
+catalogue contract and passed a small isolated fixture check.
+
+The upstream `pocketshell-play` invokes `pocket-session-run`, which owns display
+and service handover. A direct child runtime launch while the frontend still
+holds DRM is unsafe; game launch remains a later task after ownership and init
+respawn are proven on target hardware.
+
+Stage 2 status: **not complete**. See [ROADMAP.md](ROADMAP.md). BaseOS
+systemctl integration, scanner target validation, audio semantics, and game
+launch/return remain unverified.
 ## Source and package baseline
 
 - Source snapshot: `inputs/launcher-src/` (feat/pocketshell-cards approved

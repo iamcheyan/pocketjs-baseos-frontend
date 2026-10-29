@@ -23,9 +23,10 @@ Keep that backup until the handheld has passed the device checklist.
 
 ## Current limitations
 
-The launcher UI and card navigation are present. BaseOS's current PocketJS
-Linux KMS runtime does not provide guest filesystem access to
-`/mnt/sdcard/games/` or app switching, so Library scanning and child package
-launch are unavailable in this stage. Details and the second-stage native
-bridge proposal are in [docs/MIGRATION.md](docs/MIGRATION.md). Hardware steps
-are in [docs/DEVICE-CHECKLIST.md](docs/DEVICE-CHECKLIST.md).
+The launcher UI and horizontal card navigation are present. BaseOS has no guest
+filesystem bridge to enumerate `/mnt/sdcard/games/`, and Linux KMS cannot switch
+to another package during the current runtime process. The compiled PocketShell
+bridge requires compatibility shims; its staged scanner draft is not installed
+or device-verified. See [docs/MIGRATION.md](docs/MIGRATION.md),
+[docs/ROADMAP.md](docs/ROADMAP.md), and
+[docs/DEVICE-CHECKLIST.md](docs/DEVICE-CHECKLIST.md).
