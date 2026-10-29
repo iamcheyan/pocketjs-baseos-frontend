@@ -1,0 +1,9 @@
+2026-10-29T23:27:14 starting; package=/mnt/sdcard/System/pocketjs/apps/boot.pocket
+2026-10-29T23:27:14 baseos.conf readable; SSH/ADB are enabled by BaseOS defaults
+2026-10-29T23:27:14 display: fbdev /dev/fb0
+2026-10-29T23:27:14 input: /dev/input/event1 (ANBERNIC-keys)
+2026-10-29T23:27:14 /storage bind skipped (mount point missing or already mounted)
+2026-10-29T23:27:14 admission package=/mnt/sdcard/System/pocketjs/apps/boot.pocket exit=0 output=package admitted: /mnt/sdcard/System/pocketjs/apps/boot.pocket (rocknix-h700-kms)
+2026-10-29T23:27:14 launching runtime; package=/mnt/sdcard/System/pocketjs/apps/boot.pocket args=--fb /dev/fb0 --input /dev/input/event1
+DRM unavailable (No such file or directory (os error 2)); trying framebuffer
+display: fbdev (timer pacing)

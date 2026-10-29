@@ -6,8 +6,12 @@ set -u
 SD=/mnt/sdcard
 RUNTIME="$SD/System/pocketjs/bin/pocket-linux-kms"
 PACKAGE="$SD/System/pocketjs/apps/boot.pocket"
+APPROVED="$SD/System/pocketjs/apps/boot.approved.pocket"
 LOG=/tmp/pocketjs-frontend.log
 FAILURES=/tmp/pocketjs-frontend-failures
+COMPAT="$SD/System/compat"
+PATH="$COMPAT/bin:$COMPAT/usr/bin:$PATH"
+export PATH
 
 log() {
     timestamp=$(date '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || printf unknown-time)
@@ -34,6 +38,13 @@ backoff() {
     fi
 }
 
+check_package() {
+    admission_output=$("$RUNTIME" --package "$1" --check 2>&1)
+    admission_status=$?
+    log "admission package=$1 exit=$admission_status output=$admission_output"
+    return "$admission_status"
+}
+
 log "starting; package=$PACKAGE"
 if [ -r "$SD/baseos.conf" ]; then
     log "baseos.conf readable; SSH/ADB are enabled by BaseOS defaults"
@@ -47,9 +58,14 @@ if [ ! -x "$RUNTIME" ]; then
     exit 1
 fi
 if [ ! -f "$PACKAGE" ]; then
-    log "package missing: $PACKAGE"
-    backoff
-    exit 1
+    if [ -f "$APPROVED" ]; then
+        log "primary package missing; using approved fallback"
+        PACKAGE=$APPROVED
+    else
+        log "package missing: $PACKAGE"
+        backoff
+        exit 1
+    fi
 fi
 
 card=
@@ -59,12 +75,37 @@ for candidate in /dev/dri/card0 /dev/dri/card1; do
         break
     fi
 done
-if [ -z "$card" ]; then
-    log "DRM card not found in /dev/dri/card0..card1"
-    backoff
-    exit 1
+if [ -n "$card" ]; then
+    log "display: DRM card=$card"
+    display_args="--card $card"
+else
+    log "display: fbdev /dev/fb0"
+    display_args="--fb /dev/fb0"
 fi
-log "DRM card=$card"
+
+input=
+input_name=
+for candidate in /dev/input/event*; do
+    [ -e "$candidate" ] || continue
+    name=$(cat "/sys/class/input/${candidate##*/}/device/name" 2>/dev/null || :)
+    if [ "$name" = "ANBERNIC-keys" ]; then
+        input=$candidate
+        input_name=$name
+        break
+    fi
+    if [ -z "$input" ]; then
+        input=$candidate
+        input_name=$name
+    fi
+done
+if [ -n "$input" ]; then
+    log "input: $input ($input_name)"
+    input_args="--input $input"
+else
+    log "input: no evdev device found; runtime will probe /dev/input"
+    input_args=
+fi
+
 if [ -d /storage ] && command -v mountpoint >/dev/null 2>&1 \
     && ! mountpoint -q /storage 2>/dev/null; then
     if mount --bind "$SD" /storage >> "$LOG" 2>&1; then
@@ -76,31 +117,32 @@ else
     log "/storage bind skipped (mount point missing or already mounted)"
 fi
 
-
-
-admission_output=$("$RUNTIME" --package "$PACKAGE" --check 2>&1)
-admission_status=$?
-log "admission exit=$admission_status output=$admission_output"
-if [ "$admission_status" -ne 0 ]; then
-    log "package admission failed; runtime will not be started"
-    backoff
-    exit 1
+if ! check_package "$PACKAGE"; then
+    if [ "$PACKAGE" != "$APPROVED" ] && [ -f "$APPROVED" ] && check_package "$APPROVED"; then
+        log "primary package rejected; using approved fallback $APPROVED"
+        PACKAGE=$APPROVED
+    else
+        log "package admission failed; runtime will not be started"
+        backoff
+        exit 1
+    fi
 fi
 
+started=$(date +%s 2>/dev/null || printf '0')
+log "launching runtime; package=$PACKAGE args=$display_args $input_args"
 (
-    exec "$RUNTIME" --package "$PACKAGE" --card "$card"
+    exec "$RUNTIME" --package "$PACKAGE" $display_args $input_args
 ) >> "$LOG" 2>&1 &
 runtime_pid=$!
 wait "$runtime_pid"
 runtime_status=$?
+finished=$(date +%s 2>/dev/null || printf '0')
 log "PocketJS exit code=$runtime_status"
-read_failures
-failures=$((failures + 1))
-printf '%s\n' "$failures" > "$FAILURES" 2>/dev/null || :
-if [ "$failures" -ge 3 ]; then
-    log "failure streak=$failures; sleeping 30 seconds before respawn"
-    sleep 30
-else
+if [ "$started" -gt 0 ] && [ "$finished" -ge $((started + 10)) ]; then
+    printf '0\n' > "$FAILURES" 2>/dev/null || :
+    log "runtime ran for $((finished - started))s; clearing failure streak"
     sleep 3
+else
+    backoff
 fi
 exit "$runtime_status"

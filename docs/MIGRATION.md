@@ -5,8 +5,10 @@
 The payload installs `System/launch_frontend.sh`, the PocketJS Linux KMS runtime,
 and the approved launcher package. BaseOS `frontend-session` invokes the
 script from the SD root through `/bin/sh`; no systemd unit is used. The script
-checks runtime and package presence, probes DRM nodes in order, runs package
-admission with `--check`, then starts the runtime with `--package` and `--card`.
+checks runtime and package presence, selects DRM when a card node exists and
+otherwise falls back to `--fb /dev/fb0`, chooses the `ANBERNIC-keys` evdev node
+when present, runs package admission with `--check`, then starts the runtime.
+If the primary package is rejected it retries `boot.approved.pocket`.
 Diagnostics stay in `/tmp/pocketjs-frontend.log` (RAM). Consecutive startup or
 runtime failures back off, reaching 30 seconds from the third failure.
 

@@ -121,6 +121,36 @@ Input mapping used: A=305 (CIRCLE), B=304 (CROSS), L=310, R=311.
 Full commands, helper build, and frame notes: `docs/evidence/M2-display.txt`.
 M2 complete.
 
+## M3 automatic boot record (2026-10-30)
+
+`System/launch_frontend.sh` now selects DRM when `/dev/dri/card0` or `card1`
+exists and otherwise uses `--fb /dev/fb0`; it prefers the `ANBERNIC-keys`
+evdev node, prepends `System/compat/{bin,usr/bin}` to `PATH`, retries
+`boot.approved.pocket` when the primary package is rejected, and preserves
+the failure/backoff logic.
+
+Reboot command:
+
+```text
+$ adb -s 5c0010894414c802512 reboot
+```
+
+Automatic frontend log after reboot (`docs/evidence/M3-boot.txt`):
+
+```text
+display: fbdev /dev/fb0
+input: /dev/input/event1 (ANBERNIC-keys)
+admission ... exit=0 output=package admitted: ... (rocknix-h700-kms)
+launching runtime; ... args=--fb /dev/fb0 --input /dev/input/event1
+display: fbdev (timer pacing)
+```
+
+No failure streak was logged. The post-reboot panel frame is
+`docs/evidence/m3-boot.png` (HOME workspace, Terminal card selected).
+Payload rebuilt as `dist/sdcard-payload.tar.gz` (sha256
+`e04b493aac8276d7ffa58e16b85c6298fb42a2ffc776f4905d177518b755d833`).
+M3 complete.
+
 ## Recovery
 
 
