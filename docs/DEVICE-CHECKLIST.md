@@ -94,6 +94,33 @@ completed 60 logical ticks; 720x480; rocknix-h700-kms
 No loader or `GLIBC_*` error occurred. M1 complete.
 
 
+## M2 display and controls record (2026-10-30)
+
+Direct fbdev run (no DRM present):
+
+```text
+$ adb -s 5c0010894414c802512 shell \
+    "/mnt/sdcard/System/pocketjs/bin/pocket-linux-kms \
+     --package /mnt/sdcard/System/pocketjs/apps/boot.pocket \
+     --fb /dev/fb0 --input /dev/input/event1"
+DRM unavailable (No such file or directory (os error 2)); trying framebuffer
+display: fbdev (timer pacing)
+completed 611 logical ticks; 720x480; rocknix-h700-kms
+```
+
+Frames captured with `dd if=/dev/fb0 ...` and converted from the 720×960
+virtual mapping to 720×480 PNG:
+
+- `docs/evidence/m2-before.png`: HOME workspace, Terminal card selected.
+- `docs/evidence/m2-after-L.png`: L moved to SYSTEM (WS 5/5).
+- `docs/evidence/m2-after-R.png`: R returned to HOME (WS 1/5).
+- `docs/evidence/m2-after-A.png`: A opened the Terminal.
+- `docs/evidence/m2-after-B.png`: B returned to HOME.
+
+Input mapping used: A=305 (CIRCLE), B=304 (CROSS), L=310, R=311.
+Full commands, helper build, and frame notes: `docs/evidence/M2-display.txt`.
+M2 complete.
+
 ## Recovery
 
 

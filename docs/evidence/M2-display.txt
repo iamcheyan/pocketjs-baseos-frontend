@@ -1,0 +1,36 @@
+M2 display evidence (2026-10-30)
+
+Runtime command (on device):
+  /mnt/sdcard/System/pocketjs/bin/pocket-linux-kms \
+    --package /mnt/sdcard/System/pocketjs/apps/boot.pocket \
+    --fb /dev/fb0 --input /dev/input/event1
+Log:
+  DRM unavailable (No such file or directory (os error 2)); trying framebuffer
+  display: fbdev (timer pacing)
+  completed 611 logical ticks; 720x480; rocknix-h700-kms
+
+Key injection helper: tools/sendkey.c, built statically for aarch64 with
+  docker run --rm --platform linux/arm64 -v "$PWD/.build:/src" alpine:3.20 \
+    sh -lc 'apk add --no-cache gcc musl-dev linux-headers && \
+            gcc -static -O2 -o /src/sendkey /src/sendkey.c'
+Pushed to /mnt/sdcard/System/pocketjs/bin/sendkey.
+
+Physical mapping used by the launcher UI:
+  A = evdev 305 (CIRCLE, activate)
+  B = evdev 304 (CROSS, back)
+  L = evdev 310 (LTRIGGER, previous workspace)
+  R = evdev 311 (RTRIGGER, next workspace)
+
+Frame sequence (720x480 crop of the 720x960 fbdev mapping):
+  before      HOME workspace, Terminal card selected
+  after-L     SYSTEM workspace (WS 5/5)
+  after-R     HOME workspace (WS 1/5)
+  after-A     Terminal interactive shell opened
+  after-B     HOME workspace restored
+
+PNGs:
+  docs/evidence/m2-before.png
+  docs/evidence/m2-after-L.png
+  docs/evidence/m2-after-R.png
+  docs/evidence/m2-after-A.png
+  docs/evidence/m2-after-B.png
