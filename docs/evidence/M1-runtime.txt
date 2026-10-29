@@ -1,0 +1,23 @@
+M1 runtime load evidence (2026-10-30)
+
+Build:
+  ./tools/build-runtime.sh
+  profile: rocknix-h700-kms exported from tools/pocket-runtime-profile/
+  target: aarch64-unknown-linux-musl, Rust 1.93.0, ALSA disabled
+
+Host checks:
+  $ file inputs/pocket-linux-kms
+  ELF 64-bit LSB executable, ARM aarch64, statically linked, not stripped
+  $ readelf -V inputs/pocket-linux-kms
+  (no version information found)
+  $ sha256sum inputs/pocket-linux-kms
+  035be28e3cbc05724350dac9a0ca95ab65d33022403138692f77d001728719d6
+
+Device run (via hx90):
+  $ adb -s 5c0010894414c802512 shell \
+      "/mnt/sdcard/System/pocketjs/bin/pocket-linux-kms \
+       --package /mnt/sdcard/System/pocketjs/apps/boot.pocket \
+       --headless --frames 60"
+  completed 60 logical ticks; 720x480; rocknix-h700-kms
+
+No loader or GLIBC_* error occurred.

@@ -62,8 +62,40 @@ default. Verify on first boot:
 
 SSH reachability, ADB enumeration, host name resolution, and frontend operation
 are all **not verified** on the target by this workspace task.
+## M1 runtime load record (2026-10-30)
+
+Build command: `./tools/build-runtime.sh` (ARM64 Alpine, pinned PocketJS
+`e6770376`, Rust 1.93.0, `aarch64-unknown-linux-musl`, ALSA disabled,
+rocknix-h700 profile exported with `bun tools/pocket.ts profile export`).
+
+Host ELF summary:
+
+```text
+$ file inputs/pocket-linux-kms
+ELF 64-bit LSB executable, ARM aarch64, statically linked, not stripped
+$ readelf -V inputs/pocket-linux-kms
+(no version information found)
+$ readelf -l inputs/pocket-linux-kms | grep INTERP
+(no output)
+$ sha256sum inputs/pocket-linux-kms
+035be28e3cbc05724350dac9a0ca95ab65d33022403138692f77d001728719d6
+```
+
+Device acceptance (binary copied through hx90, then `adb push`):
+
+```text
+$ adb -s 5c0010894414c802512 shell \
+    "/mnt/sdcard/System/pocketjs/bin/pocket-linux-kms \
+     --package /mnt/sdcard/System/pocketjs/apps/boot.pocket \
+     --headless --frames 60"
+completed 60 logical ticks; 720x480; rocknix-h700-kms
+```
+
+No loader or `GLIBC_*` error occurred. M1 complete.
+
 
 ## Recovery
+
 
 If the app exits or admission fails, BaseOS init respawns the script after its
 throttling interval. After three consecutive observed runtime failures the

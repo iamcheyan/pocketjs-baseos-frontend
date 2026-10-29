@@ -1,6 +1,7 @@
 dist/
 System/pocketjs/bin/
 System/pocketjs/apps/
+.build/
 inputs/launcher-src-WRONG-grid-old/
 *.log
 OBJECTIVE.md

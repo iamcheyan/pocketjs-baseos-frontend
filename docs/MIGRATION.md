@@ -126,7 +126,7 @@ The current entry script performs a best-effort SD-root bind mount at
 `/storage`. `tools/build-compatibility-layer.sh` stages a draft
 `pocketshell-games` JSON generator and service-status helper under ignored
 `dist/compat/`; it does not install them into BaseOS or claim device support.
-The generator follows the old bridge's `{"sections":{"games":[...]},"total":N}`
+The generator follows the old bridge's `{"sections":{"games":[...]} ,"total":N}`
 catalogue contract and passed a small isolated fixture check.
 
 The upstream `pocketshell-play` invokes `pocket-session-run`, which owns display
@@ -137,6 +137,7 @@ respawn are proven on target hardware.
 Stage 2 status: **not complete**. See [ROADMAP.md](ROADMAP.md). BaseOS
 systemctl integration, scanner target validation, audio semantics, and game
 launch/return remain unverified.
+
 ## Source and package baseline
 
 - Source snapshot: `inputs/launcher-src/` (feat/pocketshell-cards approved
@@ -144,7 +145,8 @@ launch/return remain unverified.
   change set. Do not use `inputs/launcher-src-WRONG-grid-old/`.
 - UI reference package: `inputs/boot.pocket`, size 4,084,728 bytes,
   SHA-256 `d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2`.
-- Runtime: `inputs/pocket-linux-kms`, copied as supplied; not built here.
+- Runtime: rebuilt from the pinned source with `tools/build-runtime.sh`; target
+  device loading remains unverified until M1 acceptance succeeds.
 - `boot.pocket` is a package artifact, not a substitute for the source snapshot.
 
 ## Verification record
@@ -174,4 +176,23 @@ Acceptance commands and actual output:
 Target package admission, BaseOS boot, display/input, bridge shim activation,
 Library behavior, SSH/ADB reachability, and game launch/return remain **not
 verified**; complete the device checklist before treating Stage 1/2 as accepted.
+## BaseOS musl runtime build
 
+`tools/build-runtime.sh` checks out pinned PocketJS revision
+`e6770376626a4de5c93eaa6fb048e7e9ffb81f9f` into ignored `.build/pocketjs/`.
+It copies the `rocknix-h700-kms` profile from `tools/pocket-runtime-profile/`
+into the source tree, exports `pocket_profile.rs` with Bun, and builds
+`pocket-linux-kms` natively in an ARM64 Alpine container with Rust 1.93.0 and
+target `aarch64-unknown-linux-musl`. The build disables ALSA and installs the
+static executable at `inputs/pocket-linux-kms`. `prepare-runtime-workspace.py`
+also applies the target-adaptive `ioctl` request cast required by the musl
+`libc` signature. Run the script after changing the pin or the recipe; do not
+commit the upstream checkout.
+
+The pinned PocketJS source declares `rust-version = "1.93"`; its toolchain file
+selects a newer Rust release. The BaseOS build intentionally uses Rust 1.93.0,
+the declared minimum, through `cargo +1.93.0`.
+
+M1 device acceptance is recorded in `docs/DEVICE-CHECKLIST.md`: the static
+binary completed 60 logical ticks on the RG34XX with the `rocknix-h700-kms`
+package and no loader error.
