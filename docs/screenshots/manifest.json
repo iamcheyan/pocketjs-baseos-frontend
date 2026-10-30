@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-10-30T17:23:32.493Z",
+  "url": "http://127.0.0.1:8099/browser-preview.html",
+  "chrome": "/usr/bin/google-chrome",
+  "screenshots": [
+    {
+      "name": "apps-dark-720x480.png",
+      "width": 720,
+      "height": 480,
+      "section": "应用",
+      "active": "▶文件管理器",
+      "light": false,
+      "sha256": "a820f7be1797cc7af79d5872f835eb042bb64f4b20c8cb59146d4d80240d717c"
+    },
+    {
+      "name": "apps-light-720x480.png",
+      "width": 720,
+      "height": 480,
+      "section": "应用",
+      "active": "▶文件管理器",
+      "light": true,
+      "sha256": "ef7cac8fe37d381b67d3f169eadf13a810dd567a5157c04a1aa2af798200b2e1"
+    },
+    {
+      "name": "apps-selected-720x480.png",
+      "width": 720,
+      "height": 480,
+      "section": "应用",
+      "active": "▶存储信息",
+      "light": false,
+      "sha256": "0cb23f6fea5136f9e32ca6de0b6952935f9c03624e82996ed2da4c564d52bd01"
+    },
+    {
+      "name": "services-dark-720x480.png",
+      "width": 720,
+      "height": 480,
+      "section": "服务",
+      "active": "▶ADBD开启",
+      "light": false,
+      "sha256": "300f4fbff9bb71c726ce5b31d175baed93f71f1bcc2d732805162d7e78b41190"
+    },
+    {
+      "name": "services-toggled-720x480.png",
+      "width": 720,
+      "height": 480,
+      "section": "服务",
+      "active": "▶ADBD关闭",
+      "light": false,
+      "sha256": "25ce6d903bf13a18c05d0558dba064df8caaab70e4417da47d08b252b3f4d430"
+    },
+    {
+      "name": "settings-dark-720x480.png",
+      "width": 720,
+      "height": 480,
+      "section": "设置",
+      "active": "▶主题：深色",
+      "light": false,
+      "sha256": "8792262dde0876c2669d012ac91b03c5e21823488e315310e120149b7a78e5c5"
+    },
+    {
+      "name": "settings-light-720x480.png",
+      "width": 720,
+      "height": 480,
+      "section": "设置",
+      "active": "▶主题：浅色",
+      "light": true,
+      "sha256": "ce91be63e78664a5549d8353d39f71b5620bfe6b7ecf6f674c55add4937c5119"
+    }
+  ]
+}

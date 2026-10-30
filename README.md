@@ -21,6 +21,20 @@ only `System/` and `README.txt`.
 The script backs up any existing `System/` and `README.txt` before extraction.
 Keep that backup until the handheld has passed the device checklist.
 
+## Preview and screenshots
+
+The RG34XX launcher preview is a dependency-free static page:
+
+```sh
+cd inputs/launcher-src && python3 -m http.server 8099 --bind 127.0.0.1
+# open http://127.0.0.1:8099/browser-preview.html
+```
+
+`CHROME_BIN=/usr/bin/google-chrome node tools/capture-screenshots.mjs \
+  http://127.0.0.1:8099/browser-preview.html docs/screenshots` captures the 720×480 panel in
+seven states (apps/services/settings, dark/light, selection, service toggle) and writes a
+manifest with the run timestamp and SHA-256 of each PNG. See `VERIFICATION.md`.
+
 ## Current limitations
 
 The launcher UI and horizontal card navigation are present. BaseOS has no guest
