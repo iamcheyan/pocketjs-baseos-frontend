@@ -12,8 +12,14 @@ export interface StatusBarProps {
   pageTitle?: string;
   pageIndex?: number;
   pageCount?: number;
+  category?: string;
 }
-const WORKSPACES = ["HOME", "MEDIA", "GAMES", "SETUP", "SYSTEM"];
+// Three panels now: everything launchable lives in APPS. The HOME/MEDIA/GAMES
+// split only made sense while each screen had its own carousel; with one list
+// and a category badge the extra tabs had nothing left to say. The WS n/5
+// counter was decoration and is gone with them.
+const TABS = ["APPS", "SETTINGS", "SYSTEM"];
+const tabIndex = (screen: number) => (screen === 0 ? 0 : screen === 3 ? 1 : 2);
 
 export function StatusBar(props: StatusBarProps) {
   const batteryKnown = () => props.batteryLevel >= 0;
@@ -30,19 +36,23 @@ export function StatusBar(props: StatusBarProps) {
   return (
     <View class="w-[360px] h-[22px] flex-col justify-between" style={{ bgColor: "#06111B" }}>
       <View class="w-[360px] h-[21px] flex-row items-center justify-between px-2">
-        <View class="flex-row items-center gap-1">
-          <Text class="text-xs font-mono" style={{ textColor: "#7893A8" }}>WS</Text>
-          <Text class="text-xs font-bold font-mono" style={{ textColor: "#3ECFFF" }}>
-            {props.currentScreen + 1}/5
-          </Text>
-          <Text class="text-xs font-bold tracking-wide" style={{ textColor: "#00FF99" }}>
-            {WORKSPACES[props.currentScreen] ?? "--"}
-          </Text>
+        <View class="flex-row items-center gap-2">
+          {TABS.map((label, i) => (
+            <Text
+              class={i === tabIndex(props.currentScreen) ? "text-xs font-bold tracking-wide" : "text-xs"}
+              style={{ textColor: i === tabIndex(props.currentScreen) ? "#00FF99" : "#5A7183" }}
+            >
+              {label}
+            </Text>
+          ))}
           {props.pageTitle ? <Text class="text-xs font-bold" style={{ textColor: "#3ECFFF" }}>{props.pageTitle}</Text> : null}
           {props.pageCount ? <Text class="text-xs font-mono" style={{ textColor: "#7893A8" }}>{props.pageIndex! + 1}/{props.pageCount}</Text> : null}
         </View>
 
         <View class="flex-row items-center gap-1 px-1">
+          {props.category ? (
+            <Text class="text-xs font-bold" style={{ textColor: "#3ECFFF" }}>{props.category}</Text>
+          ) : null}
           <Text class="text-xs font-mono" style={{ textColor: props.wifiConnected ? "#00FF99" : "#41586B" }}>
             {"\uf1eb"}
           </Text>

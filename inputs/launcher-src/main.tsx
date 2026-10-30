@@ -8,6 +8,7 @@ import { animate } from "@pocketjs/framework/animation";
 import {
   LAUNCHER_APPS,
   getAppsForScreen,
+  categoryLabel,
   type LauncherApp,
 } from "./launcher-catalog";
 import { StatusBar } from "./status-bar";
@@ -19,6 +20,7 @@ import {
   type SettingsState,
 } from "./pages/settings-page";
 import { SystemPage } from "./pages/system-page";
+import { WifiPage, type WifiRow } from "./pages/wifi-page";
 import { parseNetworkSnapshot, parseSystemSnapshot, type NetworkSnapshot, type SystemSnapshot } from "./system-status";
 
 type HostUI = {
@@ -47,7 +49,7 @@ mount(() => {
   // -------------------------------------------------------------------------
   // Launcher State (Switch 5-Screen)
   // -------------------------------------------------------------------------
-  const [currentScreen, setCurrentScreen] = createSignal(0); // 0: Home, 1: Media, 2: Games, 3: Settings, 4: System
+  const [currentScreen, setCurrentScreen] = createSignal(0);
   const [launcherOpen, setLauncherOpen] = createSignal(true);
 
   // Card indexes per screen
@@ -62,7 +64,8 @@ mount(() => {
   const [volume, setVolume] = createSignal(65);
   const [wifiEnabled, setWifiEnabled] = createSignal(true);
   const [bluetoothEnabled, setBluetoothEnabled] = createSignal(false);
-  const [timeoutIndex, setTimeoutIndex] = createSignal(3); // default 5m
+  const [language, setLanguage] = createSignal("en");
+  const [timeoutIndex, setTimeoutIndex] = createSignal(0); // 10s, matches the saved default
   const [services, setServices] = createSignal<Record<string, boolean>>({ ssh: true, adbusb: true });
 
   // Hardware Status State
@@ -216,14 +219,16 @@ mount(() => {
     }
   };
 
+  // Three panels: APPS (0), SETTINGS (3), SYSTEM (4).
+  const SCREENS = [0, 3, 4];
   const switchScreen = (target: number, direction: number) => {
     try {
-      const next = (target + 5) % 5;
+      const next = SCREENS.includes(target) ? target : 0;
       if (next === currentScreen()) return;
 
       setCurrentScreen(next);
 
-      if (next <= 2) {
+      if (next === 0) {
         updateCardPosition(currentCardIndex(), false);
       }
 
@@ -313,11 +318,103 @@ mount(() => {
     showToast(`Wi-Fi: ${next ? "ON 开启" : "OFF 关闭"}`);
   };
 
+  // -------------------------------------------------------------------------
+  // Wi-Fi picker (scan → choose → passphrase)
+  // -------------------------------------------------------------------------
+  const [wifiOpen, setWifiOpen] = createSignal(false);
+  const [wifiRows, setWifiRows] = createSignal<WifiRow[]>([]);
+  const [wifiIndex, setWifiIndex] = createSignal(0);
+  const [wifiStatus, setWifiStatus] = createSignal("");
+  const [wifiPskFor, setWifiPskFor] = createSignal("");
+  const [wifiPsk, setWifiPsk] = createSignal("");
+  const [wifiBusy, setWifiBusy] = createSignal(false);
+
+  const openWifiPanel = () => {
+    setWifiOpen(true);
+    setWifiRows([]);
+    setWifiIndex(0);
+    setWifiPskFor("");
+    setWifiPsk("");
+    setWifiStatus("扫描中…");
+    setWifiBusy(true);
+    const raw = host?.__launcher?.("WIFI\tscan") ?? "";
+    setWifiBusy(false);
+    if (raw.startsWith("error")) {
+      setWifiStatus(raw.includes("supplicant") ? "无法启动 Wi-Fi" : "扫描失败");
+      return;
+    }
+    if (raw.trim() === "empty") {
+      setWifiStatus("未发现网络");
+      return;
+    }
+    const rows: WifiRow[] = raw
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => {
+        const [ssid, signal, sec] = line.split("\t");
+        return { ssid: ssid ?? "", signal: signal ?? "", sec: sec ?? "wpa" };
+      })
+      .filter((row) => row.ssid.length > 0);
+    setWifiRows(rows);
+    setWifiStatus(rows.length ? "" : "未发现网络");
+  };
+
+  const connectWifi = (ssid: string, psk: string) => {
+    setWifiBusy(true);
+    setWifiStatus(`连接 ${ssid} …`);
+    const res = host?.__launcher?.(`WIFI\tconnect\t${ssid}\t${psk}`) ?? "";
+    setWifiBusy(false);
+    setWifiPskFor("");
+    setWifiPsk("");
+    if (res.startsWith("connected")) {
+      setWifiStatus(`已连接 ${ssid}`);
+      setWifiEnabled(true);
+    } else {
+      setWifiStatus(res || "连接失败");
+    }
+  };
+
+  const activateWifiRow = () => {
+    const row = wifiRows()[wifiIndex()];
+    if (!row) return;
+    if (row.sec === "open") connectWifi(row.ssid, "");
+    else {
+      setWifiPskFor(row.ssid);
+      setWifiPsk("");
+      setWifiStatus("");
+    }
+  };
+
+  // Returns true when the open Wi-Fi panel consumed the input.
+  const wifiKey = (dir: number | 0, action: "up" | "down" | "ok" | "back") => {
+    if (!wifiOpen()) return false;
+    if (wifiPskFor()) {
+      if (action === "back") {
+        setWifiPskFor("");
+        setWifiStatus("");
+      }
+      return true;   // the TextField owns typing
+    }
+    if (action === "up") setWifiIndex((p) => Math.max(0, p - 1));
+    else if (action === "down") setWifiIndex((p) => Math.min(Math.max(0, wifiRows().length - 1), p + 1));
+    else if (action === "ok") activateWifiRow();
+    else if (action === "back") setWifiOpen(false);
+    return true;
+  };
+
   const toggleBluetooth = () => {
     const next = !bluetoothEnabled();
     setBluetoothEnabled(next);
     host?.__launcher?.(`CONTROL\tbluetooth\t${next ? "on" : "off"}`);
     showToast(`Bluetooth: ${next ? "ON 开启" : "OFF 关闭"}`);
+  };
+
+  const cycleLanguage = () => {
+    const order = ["en", "zh", "ja"];
+    const next = order[(order.indexOf(language()) + 1) % order.length];
+    setLanguage(next);
+    host?.__launcher?.(`LANGUAGE\t${next}`);
+    showToast(`Language: ${next.toUpperCase()}`);
   };
 
   const cycleTimeout = (delta: number) => {
@@ -352,17 +449,13 @@ mount(() => {
       return;
     }
 
-    // Run the selected app in the single terminal workspace.
+    // Terminal-backed entries are gone with the audit: every one of them shelled
+    // out to /usr/bin/heya-tool or evtest, which BaseOS does not ship, so they
+    // dropped the user into a bare prompt instead of an app. The only runnable
+    // entry left is the shell itself.
     setLauncherOpen(false);
     if (app.id === "terminal") return;
     send("RESET\t0");
-    const command =
-      app.id === "gamepad" ? "/usr/bin/evtest /dev/input/event3"
-      : app.id === "file-manager-text" ? "/usr/bin/heya-tool file-manager-text --inside"
-      : app.id === "monitor" ? "/usr/bin/heya-tool monitor --inside"
-      : `/usr/bin/heya-tool ${app.id} --inside`;
-    send(`0\tTEXT ${command}`);
-    send("0\tKEY ENTER");
   };
 
 
@@ -379,8 +472,8 @@ mount(() => {
       const sel = settingsIndex();
       if (sel === 0) changeBrightness(5);
       else if (sel === 1) changeVolume(5);
-      else if (sel === 2) toggleWifi();
-      else if (sel === 3) toggleBluetooth();
+      else if (sel === 2) openWifiPanel();
+      else if (sel === 3) cycleLanguage();
       else if (sel === 4) cycleTimeout(1);
       else if (sel >= 5 && sel < 5 + SERVICE_KEYS.length) {
         toggleService(SERVICE_KEYS[sel - 5].key);
@@ -481,34 +574,51 @@ mount(() => {
     send("RESIZE\t12x46");
     send("0\tSTART");
     log("Terminal Started");
+    const savedTimeout = (host?.__launcher?.("STATE\ttimeout") ?? "").trim();
+    const savedIndex = TIMEOUT_OPTIONS.findIndex((option) => option.value === savedTimeout);
+    if (savedIndex >= 0) setTimeoutIndex(savedIndex);
+
+    const lang = host?.__launcher?.("LANGUAGE") ?? "en";
+    if (["en", "zh", "ja"].includes(lang.trim())) setLanguage(lang.trim());
     syncHardwareLevels();
     syncHardwareStatus();
     syncSystemStatus();
     lastHardwarePoll = Date.now();
 
     onTextEvent((event: TextEvent) => {
+      if (wifiOpen() && event.kind === "key" && event.pressed) {
+        const action =
+          event.key === "ArrowUp" ? "up" :
+          event.key === "ArrowDown" ? "down" :
+          event.key === "Enter" || event.key === " " ? "ok" :
+          event.key === "Escape" ? "back" : "";
+        if (action) {
+          wifiKey(0, action as "up" | "down" | "ok" | "back");
+          return;
+        }
+      }
       if (launcherOpen()) {
         if (event.kind === "key" && event.pressed) {
           if (event.key === "ArrowLeft") {
-            if (currentScreen() <= 2) moveCard(-1);
+            if (currentScreen() === 0) moveCard(-1);
             else if (currentScreen() === 3) {
               const sel = settingsIndex();
               if (sel === 0) changeBrightness(-5);
               else if (sel === 1) changeVolume(-5);
-              else if (sel === 2) toggleWifi();
-              else if (sel === 3) toggleBluetooth();
+              else if (sel === 2) openWifiPanel();
+              else if (sel === 3) cycleLanguage();
               else if (sel === 4) cycleTimeout(-1);
             } else if (currentScreen() === 4) {
               setSystemPageIndex((p) => (p + 4) % 5);
             }
           } else if (event.key === "ArrowRight") {
-            if (currentScreen() <= 2) moveCard(1);
+            if (currentScreen() === 0) moveCard(1);
             else if (currentScreen() === 3) {
               const sel = settingsIndex();
               if (sel === 0) changeBrightness(5);
               else if (sel === 1) changeVolume(5);
-              else if (sel === 2) toggleWifi();
-              else if (sel === 3) toggleBluetooth();
+              else if (sel === 2) openWifiPanel();
+              else if (sel === 3) cycleLanguage();
               else if (sel === 4) cycleTimeout(1);
             } else if (currentScreen() === 4) {
               setSystemPageIndex((p) => (p + 1) % 5);
@@ -522,11 +632,11 @@ mount(() => {
           } else if (event.key === "Enter") {
             activateCurrent();
           } else if (event.key === "Escape") {
-            if (currentScreen() > 0) switchScreen(0, -1);
+            if (currentScreen() !== 0) switchScreen(0, -1);
           } else if (event.key === "PageUp") {
-            switchScreen(currentScreen() - 1, -1);
+            switchScreen(SCREENS[(SCREENS.indexOf(currentScreen()) + 2) % 3], -1);
           } else if (event.key === "PageDown") {
-            switchScreen(currentScreen() + 1, 1);
+            switchScreen(SCREENS[(SCREENS.indexOf(currentScreen()) + 1) % 3], 1);
           }
         }
         return true;
@@ -619,13 +729,20 @@ mount(() => {
     // Native Switch Launcher Input Mode
     // -------------------------------------------------------------------------
 
+    if (wifiOpen()) {
+      if (pressed & BTN.UP) wifiKey(0, "up");
+      else if (pressed & BTN.DOWN) wifiKey(0, "down");
+      else if (pressed & BTN.CIRCLE) wifiKey(0, "ok");
+      else if (pressed & BTN.CROSS) wifiKey(0, "back");
+      return;
+    }
     if (launcherOpen()) {
       if (pressed & (BTN.RTRIGGER | BTN.ZR | BTN.START)) {
-        switchScreen(currentScreen() + 1, 1);
+        switchScreen(SCREENS[(SCREENS.indexOf(currentScreen()) + 1) % 3], 1);
         return;
       }
       if (pressed & (BTN.LTRIGGER | BTN.ZL)) {
-        switchScreen(currentScreen() - 1, -1);
+        switchScreen(SCREENS[(SCREENS.indexOf(currentScreen()) + 2) % 3], -1);
         return;
       }
       if (pressed & BTN.SELECT) {
@@ -635,26 +752,26 @@ mount(() => {
         return;
       }
       if (pressed & BTN.LEFT) {
-        if (currentScreen() <= 2) moveCard(-1);
+        if (currentScreen() === 0) moveCard(-1);
         else if (currentScreen() === 3) {
           const sel = settingsIndex();
           if (sel === 0) changeBrightness(-5);
           else if (sel === 1) changeVolume(-5);
-          else if (sel === 2) toggleWifi();
-          else if (sel === 3) toggleBluetooth();
+          else if (sel === 2) openWifiPanel();
+          else if (sel === 3) cycleLanguage();
           else if (sel === 4) cycleTimeout(-1);
         } else if (currentScreen() === 4) {
           setSystemPageIndex((p) => (p + 4) % 5);
         }
       }
       if (pressed & BTN.RIGHT) {
-        if (currentScreen() <= 2) moveCard(1);
+        if (currentScreen() === 0) moveCard(1);
         else if (currentScreen() === 3) {
           const sel = settingsIndex();
           if (sel === 0) changeBrightness(5);
           else if (sel === 1) changeVolume(5);
-          else if (sel === 2) toggleWifi();
-          else if (sel === 3) toggleBluetooth();
+          else if (sel === 2) openWifiPanel();
+          else if (sel === 3) cycleLanguage();
           else if (sel === 4) cycleTimeout(1);
         } else if (currentScreen() === 4) {
           setSystemPageIndex((p) => (p + 1) % 5);
@@ -669,7 +786,7 @@ mount(() => {
         else if (currentScreen() === 4) setSystemPageIndex((p) => (p + 1) % 5);
       }
       if (pressed & BTN.CIRCLE) activateCurrent();
-      if (pressed & BTN.CROSS && currentScreen() > 0) switchScreen(0, -1);
+      if (pressed & BTN.CROSS && currentScreen() !== 0) switchScreen(0, -1);
       return;
     }
 
@@ -761,7 +878,7 @@ mount(() => {
     brightness: brightness(),
     volume: volume(),
     wifi: wifiEnabled(),
-    bluetooth: bluetoothEnabled(),
+    language: language(),
     timeoutIndex: timeoutIndex(),
     services: services(),
   });
@@ -786,11 +903,12 @@ mount(() => {
             pageTitle={currentScreen() === 3 ? "SETTINGS" : currentScreen() === 4 ? ["OVERVIEW", "CPU", "MEMORY", "STORAGE", "NETWORK"][systemPageIndex()] : undefined}
             pageIndex={currentScreen() === 3 ? settingsIndex() : currentScreen() === 4 ? systemPageIndex() : undefined}
             pageCount={currentScreen() === 3 ? 16 : currentScreen() === 4 ? 5 : undefined}
+            category={currentScreen() === 0 ? categoryLabel(selectedApp()) : undefined}
           />
 
           {/* Animated Page Container */}
           <View class="w-[360px] flex-1 flex-col justify-between overflow-hidden relative">
-            {currentScreen() <= 2 ? (
+            {currentScreen() === 0 ? (
               <View class="w-[360px] h-[198px] flex-col justify-between px-2 py-1">
                 {/* Active Card Title & Description Row */}
                 <View class="w-[344px] h-[34px] flex-col justify-between">
@@ -851,8 +969,21 @@ mount(() => {
                 </View>
               </View>
             ) : currentScreen() === 3 ? (
-              /* Screen 3: Settings Page */
-              <SettingsPage state={settingsState()} />
+              /* Screen 3: Settings Page (Wi-Fi picker takes over while open) */
+              wifiOpen() ? (
+                <WifiPage
+                  rows={wifiRows()}
+                  index={wifiIndex()}
+                  status={wifiStatus()}
+                  pskFor={wifiPskFor()}
+                  psk={wifiPsk()}
+                  connecting={wifiBusy()}
+                  onInput={setWifiPsk}
+                  onSubmit={() => connectWifi(wifiPskFor(), wifiPsk())}
+                />
+              ) : (
+                <SettingsPage state={settingsState()} />
+              )
             ) : (
               /* Screen 4: System Information Page */
               <SystemPage
@@ -863,15 +994,19 @@ mount(() => {
             )}
           </View>
 
-          {currentScreen() <= 2 ? (
-            <View class="w-[360px] h-[20px] flex-col justify-between" style={{ bgColor: "#06111B" }}>
-              <View class="w-[360px] h-[1px]" style={{ bgColor: "#1B3345" }} />
-              <View class="w-[360px] h-[19px] flex-row items-center justify-between px-2">
-                <Text class="text-xs" style={{ textColor: "#D8E8FF" }}>L/R 切屏 · 方向键选择 · A 启动 · B 返回</Text>
-                <Text class="text-xs font-bold" style={{ textColor: "#3ECFFF" }}>SELECT 输入</Text>
-              </View>
+          {/* Every panel gets the same 20 px footer so the content block above it
+              has one height throughout; only the hints change. */}
+          <View class="w-[360px] h-[20px] flex-col justify-between" style={{ bgColor: "#06111B" }}>
+            <View class="w-[360px] h-[1px]" style={{ bgColor: "#1B3345" }} />
+            <View class="w-[360px] h-[19px] flex-row items-center justify-between px-2">
+              <Text class="text-xs" style={{ textColor: "#D8E8FF" }}>
+                {currentScreen() === 0 ? "L/R 切屏 · 方向键选择 · A 启动 · B 返回" : "L/R 切屏 · 方向键调整 · B 返回"}
+              </Text>
+              <Text class="text-xs font-bold" style={{ textColor: "#3ECFFF" }}>
+                {currentScreen() === 0 ? "SELECT 输入" : ""}
+              </Text>
             </View>
-          ) : null}
+          </View>
         </View>
       ) : (
         /* Terminal output view */

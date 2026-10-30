@@ -6,7 +6,7 @@ export interface SettingsState {
   brightness: number;
   volume: number;
   wifi: boolean;
-  bluetooth: boolean;
+  language: string;
   timeoutIndex: number;
   services: Record<string, boolean>;
 }
@@ -22,17 +22,11 @@ export const TIMEOUT_OPTIONS = [
   { label: "Never", value: "never" },
 ];
 
+// Only services BaseOS can actually start. The rest were ROCKNIX names with no
+// daemon behind them (samba, syncthing, http, ftp, rsyncd, telnet, devbridge),
+// so their switches flipped a label and nothing else.
 export const SERVICE_KEYS = [
   { key: "ssh", name: "SSH Remote Shell" },
-  { key: "samba", name: "Samba Windows Share" },
-  { key: "syncthing", name: "Syncthing File Sync" },
-  { key: "adbusb", name: "ADB over USB" },
-  { key: "avahi", name: "Avahi mDNS Discovery" },
-  { key: "http", name: "HTTP Web Server" },
-  { key: "ftp", name: "FTP File Transfer" },
-  { key: "rsyncd", name: "Rsync Daemon" },
-  { key: "telnet", name: "Telnet Console" },
-  { key: "pocketshell-dev", name: "PocketShell DevBridge" },
 ];
 
 type SettingsRow = { type: string; label: string; key?: string };
@@ -42,10 +36,9 @@ export function SettingsPage(props: { state: SettingsState }) {
     { type: "brightness", label: "Brightness" },
     { type: "volume", label: "Volume" },
     { type: "wifi", label: "Wi-Fi" },
-    { type: "bluetooth", label: "Bluetooth" },
+    { type: "language", label: "Language 语言" },
     { type: "timeout", label: "Screen Timeout" },
     ...SERVICE_KEYS.map((s) => ({ type: "service", key: s.key, label: s.name })),
-    { type: "legacy", label: "Advanced Settings" },
   ];
 
   const visibleWindow = () => {
@@ -72,7 +65,7 @@ export function SettingsPage(props: { state: SettingsState }) {
     </View>
   );
   return (
-    <View class="w-[360px] h-[218px] px-2 py-2 flex-col justify-center">
+    <View class="w-[360px] h-[198px] px-2 py-1 flex-col justify-center">
 
       {/* Settings Rows */}
       <View class="flex-col gap-[3px] w-full">
@@ -119,8 +112,10 @@ export function SettingsPage(props: { state: SettingsState }) {
                   </View>
                 ) : row().type === "wifi" ? (
                   statePill(props.state.wifi, "ON", "cyan")
-                ) : row().type === "bluetooth" ? (
-                  statePill(props.state.bluetooth, "ON", "cyan")
+                ) : row().type === "language" ? (
+                  <View class="w-[72px] h-[17px] rounded-full bg-[#102d3b] border border-[#28627a] items-center justify-center">
+                    <Text class="text-xs font-mono text-cyan-300">{props.state.language.toUpperCase()}</Text>
+                  </View>
                 ) : row().type === "timeout" ? (
                   <View class="w-[72px] h-[17px] rounded-full bg-[#102d3b] border border-[#28627a] items-center justify-center">
                     <Text class="text-xs font-mono text-cyan-300">{TIMEOUT_OPTIONS[props.state.timeoutIndex].label}</Text>

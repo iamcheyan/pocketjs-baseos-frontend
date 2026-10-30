@@ -202,20 +202,23 @@ export const LAUNCHER_APPS: readonly LauncherApp[] = [
   }
 ] as const;
 
+// Only entries whose launch path exists on BaseOS. The 2026-10 audit found the
+// rest were ROCKNIX leftovers: heya-tool, evtest, mc, nano, XMPlayer,
+// pocketshell-games and pocketjs-native-launch are all absent, and the bridge's
+// LAUNCH arm needs systemd-run, which BaseOS does not have. Pressing those
+// entries dropped the user into a terminal instead of the app.
+const RUNNABLE = new Set(["terminal"]);
+
 export function getAppsForScreen(screen: number): LauncherApp[] {
   switch (screen) {
-    case 0: // Screen 0: Home primary shortcuts
-      return LAUNCHER_APPS.filter((app) =>
-        ["terminal", "disk", "xmplayer", "monitor", "file-manager-text", "notes", "audio-mixer"].includes(app.id)
-      );
-    case 1: // Screen 1: Media apps
-      return LAUNCHER_APPS.filter((app) =>
-        ["xmplayer", "audio-mixer", "disk"].includes(app.id)
-      );
-    case 2: // Screen 2: Games and ROM utilities
-      return LAUNCHER_APPS.filter((app) =>
-        ["gamepad", "clean-mac-files", "cloud-backup", "cloud-restore"].includes(app.id)
-      );
+    case 0:
+      // One list for everything launchable. Blocked-out apps stay in the catalog
+      // for the day their binaries ship, but they are not offered to the user.
+      return [
+        ...LAUNCHER_APPS.filter((app) => app.category === "home" && RUNNABLE.has(app.id)),
+        ...LAUNCHER_APPS.filter((app) => app.category === "media" && RUNNABLE.has(app.id)),
+        ...LAUNCHER_APPS.filter((app) => app.category === "games" && RUNNABLE.has(app.id)),
+      ];
     case 4: // Screen 4: System tools
       return LAUNCHER_APPS.filter((app) =>
         ["system-info", "monitor", "processes", "storage-info", "network-info", "usb-info", "input-info", "kernel-log", "system-log"].includes(app.id)
@@ -223,4 +226,13 @@ export function getAppsForScreen(screen: number): LauncherApp[] {
     default:
       return [];
   }
+}
+
+// Label for the top-right corner of the apps panel.
+export function categoryLabel(app: LauncherApp | undefined): string {
+  if (!app) return "";
+  if (app.category === "games") return "GAMES";
+  if (app.category === "media") return "MEDIA";
+  if (app.category === "system") return "SYSTEM";
+  return "TOOLS";
 }

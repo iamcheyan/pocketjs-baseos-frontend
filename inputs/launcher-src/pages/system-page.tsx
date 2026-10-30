@@ -16,19 +16,34 @@ const AMBER = "#FFB400";
 const PALE = "#D8E8FF";
 const MUTED = "#7893A8";
 const LINE = "#1B3345";
-const PAGES = ["OVERVIEW", "CPU", "MEMORY", "STORAGE", "NETWORK"];
 const text = (value: string | null | undefined) => value || "--";
-const percentText = (value: number | null | undefined) => value === null || value === undefined ? "--%" : `${value}%`;
+const percentText = (value: number | null | undefined) => (value === null || value === undefined ? "--%" : `${value}%`);
 const compactOs = (snapshot: SystemSnapshot | null) => text(snapshot?.os).replace(/\s*Linux\s*/i, " ").trim();
 const compactKernel = (snapshot: SystemSnapshot | null) => text(snapshot?.kernel).replace(/^Linux\s+/i, "").replace(/\s*\(([^)]+)\)\s*$/, " $1");
 
 function Bar(props: { value: number | null | undefined; color: string }) {
-  const blocks = () => Array.from({ length: 16 }, (_, index) => index < Math.round(Math.max(0, Math.min(100, props.value ?? 0)) / 6.25));
+  const filledCount = () => Math.round((Math.max(0, Math.min(100, props.value ?? 0)) / 100) * 24);
+  const blocks = () => Array.from({ length: 24 }, (_, index) => index < filledCount());
   return (
-    <View class="w-[320px] h-[8px] flex-row gap-[2px]">
+    <View class="w-[336px] h-[6px] flex-row gap-[2px]">
       <Index each={blocks()}>
-        {(filled) => <View class="flex-1 h-[8px]" style={{ bgColor: filled() ? props.color : LINE }} />}
+        {(filled) => <View class="flex-1 h-[6px]" style={{ bgColor: filled() ? props.color : LINE }} />}
       </Index>
+    </View>
+  );
+}
+
+// One row shape for every page: label left, value right, optional bar underneath
+// at full width. The old versions mixed text-base/text-sm/text-lg per page,
+// which is what made this panel read as disorganised.
+function Metric(props: { label: string; value: string; color: string; percent?: number | null }) {
+  return (
+    <View class="w-[336px] flex-col gap-[3px]">
+      <View class="w-[336px] flex-row items-center justify-between">
+        <Text class="text-xs font-bold tracking-wide" style={{ textColor: props.color }}>{props.label}</Text>
+        <Text class="text-xs font-bold font-mono" style={{ textColor: PALE }}>{props.value}</Text>
+      </View>
+      {props.percent === undefined ? null : <Bar value={props.percent} color={props.color} />}
     </View>
   );
 }
@@ -53,74 +68,86 @@ export function SystemPage(props: SystemPageProps) {
   });
 
   return (
-    <View class="w-[360px] h-[218px] flex-col px-3 py-1" style={{ bgColor: INK }}>
+    <View class="w-[360px] h-[198px] flex-col px-3 py-2" style={{ bgColor: INK }}>
+      <View class="w-[336px] flex-1 flex-col justify-between" ref={(node: NodeMirror) => { pageNode = node; }}>
 
-      <View class="flex-1 flex-col justify-center gap-2 py-2" ref={(node: NodeMirror) => { pageNode = node; }}>
         {props.pageIndex === 0 ? (
-          <View class="flex-col gap-2">
-            <Text class="text-xs font-mono" style={{ textColor: PALE }}>{text(snapshot()?.model)} · {text(snapshot()?.hardware)} · {text(snapshot()?.ramVariant)}</Text>
-            <View class="flex-row items-center justify-between">
-              <Text class="text-xs font-bold" style={{ textColor: CYAN }}>CPU</Text>
-              <Text class="text-base font-bold font-mono" style={{ textColor: PALE }}>{percentText(cpu())}</Text>
-            </View>
-            <Bar value={cpu()} color={CYAN} />
-            <View class="flex-row items-center justify-between">
-              <Text class="text-xs font-bold" style={{ textColor: GREEN }}>MEMORY</Text>
-              <Text class="text-sm font-bold font-mono" style={{ textColor: PALE }}>{ram() ? `${ram()!.usedMb} / ${ram()!.totalMb} MB` : "-- / -- MB"}</Text>
-            </View>
-            <Bar value={ram()?.percent} color={GREEN} />
+          <View class="flex-col gap-[6px]">
+            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>
+              {text(snapshot()?.model)} · {text(snapshot()?.hardware)} · {text(snapshot()?.ramVariant)}
+            </Text>
+            <Metric label="CPU" value={percentText(cpu())} color={CYAN} percent={cpu()} />
+            <Metric
+              label="MEMORY"
+              value={ram() ? `${ram()!.usedMb} / ${ram()!.totalMb} MB` : "-- / -- MB"}
+              color={GREEN}
+              percent={ram()?.percent}
+            />
+            <Metric
+              label="STORAGE"
+              value={snapshot()?.storageUsed && snapshot()?.storageTotal ? `${snapshot()!.storageUsed} / ${snapshot()!.storageTotal}` : "-- / --"}
+              color={AMBER}
+              percent={storage()}
+            />
           </View>
         ) : null}
 
         {props.pageIndex === 1 ? (
-          <View class="flex-col gap-3">
-            <Text class="text-xs font-bold tracking-wide" style={{ textColor: CYAN }}>CPU UTILIZATION</Text>
-            <Text class="text-lg font-bold" style={{ textColor: CYAN }}>{percentText(cpu())}</Text>
-            <Bar value={cpu()} color={CYAN} />
-            <View class="flex-row justify-between">
-              <Text class="text-sm" style={{ textColor: PALE }}>FREQUENCY {text(snapshot()?.frequency)}</Text>
-              <Text class="text-sm" style={{ textColor: AMBER }}>TEMP {text(snapshot()?.temperature)}</Text>
-            </View>
+          <View class="flex-col gap-[6px]">
+            <Metric label="CPU UTILIZATION" value={percentText(cpu())} color={CYAN} percent={cpu()} />
+            <Metric label="FREQUENCY" value={text(snapshot()?.frequency)} color={PALE} />
+            <Metric label="TEMPERATURE" value={text(snapshot()?.temperature)} color={AMBER} />
           </View>
         ) : null}
 
         {props.pageIndex === 2 ? (
-          <View class="flex-col gap-3">
-            <Text class="text-xs font-bold tracking-wide" style={{ textColor: GREEN }}>MEMORY</Text>
-            <Text class="text-lg font-bold" style={{ textColor: GREEN }}>{ram() ? `${ram()!.usedMb} / ${ram()!.totalMb} MB` : "-- / -- MB"}</Text>
-            <Bar value={ram()?.percent} color={GREEN} />
-            <View class="flex-row justify-between">
-              <Text class="text-sm" style={{ textColor: PALE }}>USED {percentText(ram()?.percent)}</Text>
-              <Text class="text-sm" style={{ textColor: MUTED }}>FREE {ram() ? `${ram()!.availableMb} MB` : "-- MB"}</Text>
-            </View>
-            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>RAW {text(snapshot()?.ramAvailableKb?.toString())} / {text(snapshot()?.ramTotalKb?.toString())} KB</Text>
+          <View class="flex-col gap-[6px]">
+            <Metric
+              label="MEMORY"
+              value={ram() ? `${ram()!.usedMb} / ${ram()!.totalMb} MB` : "-- / -- MB"}
+              color={GREEN}
+              percent={ram()?.percent}
+            />
+            <Metric label="USED" value={percentText(ram()?.percent)} color={PALE} />
+            <Metric label="FREE" value={ram() ? `${ram()!.availableMb} MB` : "-- MB"} color={MUTED} />
+            <Metric
+              label="RAW"
+              value={`${text(snapshot()?.ramAvailableKb?.toString())} / ${text(snapshot()?.ramTotalKb?.toString())} KB`}
+              color={MUTED}
+            />
           </View>
         ) : null}
 
         {props.pageIndex === 3 ? (
-          <View class="flex-col gap-3">
-            <Text class="text-xs font-bold tracking-wide" style={{ textColor: AMBER }}>PERSISTENT STORAGE · /STORAGE</Text>
-            <Text class="text-lg font-bold" style={{ textColor: AMBER }}>{snapshot()?.storageUsed && snapshot()?.storageTotal ? `${snapshot()!.storageUsed} / ${snapshot()!.storageTotal}` : "-- / --"}</Text>
-            <Bar value={storage()} color={AMBER} />
-            <View class="flex-row justify-between">
-              <Text class="text-sm" style={{ textColor: PALE }}>USED {percentText(storage())}</Text>
-              <Text class="text-sm" style={{ textColor: MUTED }}>AVAILABLE SPACE</Text>
-            </View>
+          <View class="flex-col gap-[6px]">
+            <Metric
+              label="STORAGE · /STORAGE"
+              value={snapshot()?.storageUsed && snapshot()?.storageTotal ? `${snapshot()!.storageUsed} / ${snapshot()!.storageTotal}` : "-- / --"}
+              color={AMBER}
+              percent={storage()}
+            />
+            <Metric label="USED" value={percentText(storage())} color={PALE} />
           </View>
         ) : null}
 
         {props.pageIndex === 4 ? (
-          <View class="flex-col gap-3">
-            <Text class="text-xs font-bold tracking-wide" style={{ textColor: CYAN }}>NETWORK</Text>
-            <Text class="text-lg font-bold" style={{ textColor: CYAN }}>{text(props.network.address)}</Text>
-            <View class="flex-row justify-between">
-              <Text class="text-sm font-bold" style={{ textColor: PALE }}>{text(props.network.interface)?.toUpperCase()}</Text>
-              <Text class="text-xs" style={{ textColor: props.network.connected ? GREEN : AMBER }}>{props.network.connected ? "WIFI CONNECTED" : "WIFI DISCONNECTED"}</Text>
-            </View>
-            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>OS {compactOs(snapshot())} · KERNEL {compactKernel(snapshot())}</Text>
-            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>DISPLAY {text(snapshot()?.display)} · {text(snapshot()?.runtime)}</Text>
+          <View class="flex-col gap-[6px]">
+            <Metric label="ADDRESS" value={text(props.network.address)} color={CYAN} />
+            <Metric label="INTERFACE" value={text(props.network.interface).toUpperCase()} color={PALE} />
+            <Metric
+              label="WIFI"
+              value={props.network.connected ? "CONNECTED" : "DISCONNECTED"}
+              color={props.network.connected ? GREEN : AMBER}
+            />
+            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>
+              OS {compactOs(snapshot())} · KERNEL {compactKernel(snapshot())}
+            </Text>
+            <Text class="text-xs font-mono" style={{ textColor: MUTED }}>
+              DISPLAY {text(snapshot()?.display)} · {text(snapshot()?.runtime)}
+            </Text>
           </View>
         ) : null}
+
       </View>
     </View>
   );
