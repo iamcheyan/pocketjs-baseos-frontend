@@ -3,6 +3,12 @@
 First-stage payload for the Anbernic RG34XX running BaseOS. It boots the
 approved horizontal-card PocketJS launcher through BaseOS `frontend-session`.
 
+> **The launcher source now lives in its own repository (`pocketshell`).**
+> `inputs/launcher-src/` here is a frozen snapshot kept only so this payload can be
+> rebuilt as-is; do not edit it. Build UI changes in the pocketshell checkout
+> (`make build && make deploy` over ADB — no image rebuild), and refresh this
+> payload from the built `.pocket` when an image has to carry the new launcher.
+
 ## Build the SD payload
 
 ```sh
