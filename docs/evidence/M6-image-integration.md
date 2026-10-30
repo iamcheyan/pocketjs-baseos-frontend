@@ -74,3 +74,18 @@ it has not been claimed or simulated.
 
 Status: M6 package, payload, rootfs and image checks are complete. Fresh-card
 flash and first-boot capture remain pending manual hardware acceptance.
+
+Final artifact audit (2026-10-30):
+
+```text
+payload verifier: PASS
+image: 1,498,415,104 bytes
+image SHA-256: a7e06eca0ae38e845b982bc5ff383a2c8085b19fd9a9e75aaa3b6a9c31c1c2f5
+read-only p5 extraction boot.pocket: a8451b887ce24f203ee85b3f7f9dfe93d5e743b963a4c90eb9969f56688ea9e4
+read-only p5 extraction boot.approved.pocket: d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2
+```
+
+The package hashes above came from files dumped directly from the final image's
+rootfs partition, not only from the staging tar. Per the appended M6 correction,
+the image is ready for manual flashing; fresh-card boot capture remains a
+physical acceptance step and is not represented as completed here.
