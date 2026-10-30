@@ -1,0 +1,25 @@
+M6 first-boot payload sync (expand-storage) — container regression evidence
+
+Command:
+  cd ~/development/PJOS-LINUX && ./test-expand-storage.sh
+
+Output (exit 0):
+  ok: an already-expanded card adds nothing to the log
+  ok: a newly-expanded card is formatted once and its output is queued
+  ok: existing user configuration survives an ordinary boot
+  ok: partition-growth failure is logged without formatting or mounting
+  ok: format failure retains diagnostics and stops before mounting
+  ok: an unwritable early spool falls back to RAM without changing expansion safety
+  ok: baked PocketJS System/ is copied on first boot
+  expansion safety and boot-log tests passed
+
+The test mounts overlay/usr/share/pocketshell/System (the baked payload) at
+/usr/share/pocketshell/System, stubs gptgrow/mkfs/mount, and asserts that a
+freshly-grown p7 receives System/launch_frontend.sh, pocket-linux-kms and the
+compat scanner. The expand-storage edit itself is present in the PJOS worktree;
+its local privacy-identity hook held back the repo commit.
+
+Remaining M6 acceptance (physical steps, not yet executed):
+  ./build-rootfs.sh rg34xx && ./build-image.sh rg34xx  (tools are only partly built)
+  ./flash-card.sh on an empty card
+  first-boot frame showing the launcher without manual System/ copy
