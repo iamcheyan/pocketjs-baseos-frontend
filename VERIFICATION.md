@@ -1,8 +1,8 @@
 # Verification — pocketjs-baseos-frontend @ 2026-10-31
 
 - Verdict: PARTIAL
-- Commit: `__COMMIT__` (preview capture + docs; this document is the following commit)
-- Remote: `__REMOTE__`
+- Commit: `6167df764c8315374f6b12104cb89e2796175efe` (preview capture + docs; this document is the following commit)
+- Remote: `6167df764c8315374f6b12104cb89e2796175efe (origin/master; this repo has no main)`
 - Runtime: SD payload build (`tools/make-payload.sh`) + static RG34XX launcher preview (`inputs/launcher-src/browser-preview.html`) served on `127.0.0.1:8099` and driven in headless Chrome
 - Toolchain: sh/busybox shell checks, node v22.23.3, Chrome 155.0.8059.84
 
