@@ -6,6 +6,7 @@ fail() { printf 'verify-payload: FAIL: %s\n' "$*" >&2; exit 1; }
 [ -f "$ROOT/inputs/pocket-linux-kms" ] || fail 'runtime input missing'
 [ -x "$ROOT/inputs/pocket-linux-kms" ] || fail 'runtime input not executable'
 [ -f "$ROOT/inputs/boot.pocket" ] || fail 'boot.pocket input missing'
+[ -f "$ROOT/inputs/boot.approved.pocket" ] || fail 'boot.approved.pocket input missing'
 [ -f "$ROOT/System/launch_frontend.sh" ] || fail 'frontend script missing'
 
 if grep -Eiq 'systemctl|python|/storage/' "$ROOT/System/launch_frontend.sh"; then

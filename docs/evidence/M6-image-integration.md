@@ -41,6 +41,19 @@ Evidence for the first-boot autostart on a **pre-populated** card already
 exists in `docs/evidence/m3-boot.*`; M6 needs the equivalent capture from a
 genuinely empty flashed card.
 
-Status: M6 not complete — image is built; only the physical card flash and
-first-boot capture remain.
+## Integrated launcher package correction
 
+The initial image contained the old 4,084,728-byte package. The payload now
+uses the integrated 5,599,224-byte package as `boot.pocket`, retaining the old
+package as `boot.approved.pocket` for launcher fallback.
+
+```text
+boot.pocket          a8451b887ce24f203ee85b3f7f9dfe93d5e743b963a4c90eb9969f56688ea9e4
+boot.approved.pocket d2836f45e0221dd0de1525a38324cc56f0915282fb864cc74570e707dfa93ee2
+image                a7e06eca0ae38e845b982bc5ff383a2c8085b19fd9a9e75aaa3b6a9c31c1c2f5
+```
+
+Both package hashes were verified from `work/rg34xx/rootfs.tar` after the
+rebuilt rootfs and image completed successfully. Physical first boot remains
+for manual acceptance when an SD card is available; it has not been claimed
+or simulated.
