@@ -54,6 +54,23 @@ image                a7e06eca0ae38e845b982bc5ff383a2c8085b19fd9a9e75aaa3b6a9c31c
 ```
 
 Both package hashes were verified from `work/rg34xx/rootfs.tar` after the
-rebuilt rootfs and image completed successfully. Physical first boot remains
-for manual acceptance when an SD card is available; it has not been claimed
-or simulated.
+rebuilt rootfs and image completed successfully.
+
+The existing RG34XX runtime also admitted both files on the device:
+
+```text
+package admitted: /mnt/sdcard/System/pocketjs/apps/boot.pocket (rocknix-h700-kms)
+integrated_exit:0
+package admitted: /mnt/sdcard/System/pocketjs/apps/boot.approved.pocket (rocknix-h700-kms)
+approved_exit:0
+```
+
+Device SHA-256 values matched the primary/fallback hashes above. This confirms
+package admission on the existing installation only; it is not evidence of
+first boot from the rebuilt image. `./tools/verify-payload.sh` and
+`./test-expand-storage.sh` also pass with the corrected payload.
+Physical first boot remains for manual acceptance when an SD card is available;
+it has not been claimed or simulated.
+
+Status: M6 package, payload, rootfs and image checks are complete. Fresh-card
+flash and first-boot capture remain pending manual hardware acceptance.
