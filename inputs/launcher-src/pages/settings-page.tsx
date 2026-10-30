@@ -55,10 +55,12 @@ export function SettingsPage(props: { state: SettingsState }) {
 
   const statePill = (enabled: boolean, label: string, color: "green" | "cyan" = "green") => (
     <View class={enabled
-      ? `w-[72px] h-[17px] rounded-full items-center justify-center ${color === "green" ? "bg-emerald-900 border border-emerald-400" : "bg-sky-900 border border-sky-400"}`
+      ? (color === "green"
+        ? "w-[72px] h-[17px] rounded-full items-center justify-center bg-emerald-900 border border-emerald-400"
+        : "w-[72px] h-[17px] rounded-full items-center justify-center bg-sky-900 border border-sky-400")
       : "w-[72px] h-[17px] rounded-full items-center justify-center bg-slate-800 border border-[#34485a]"}>
       <Text class={enabled
-        ? `text-xs font-bold ${color === "green" ? "text-emerald-300" : "text-sky-300"}`
+        ? (color === "green" ? "text-xs font-bold text-emerald-300" : "text-xs font-bold text-sky-300")
         : "text-xs font-bold text-slate-500"}>
         {enabled ? label : "OFF"}
       </Text>

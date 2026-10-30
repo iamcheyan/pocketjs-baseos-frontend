@@ -42,8 +42,46 @@ records the timestamp, URL, Chrome path and per-file SHA-256.
 - The payload build produces the SD tarball with only `System/` + `README.txt`, verified by
   listing the archive.
 
+## 2026-10-31 05:05 — native bundle rebuilt and sim-verified
+
+The launcher bundle below is a **new** compile of `inputs/launcher-src` (the same source
+committed in `19f12b1`), not the 2026-10-29 baseline.
+
+- Build host: HX90 (aarch64, NixOS); PocketJS SDK `~/development/pjs-app-build`
+- Command (run in that SDK):
+  `bun tools/pocket.ts compile --manifest apps/rocknix-h700/pocket.json --runtime-config programs/rocknix-h700/pocket.runtime-config.ts --target rocknix-h700-kms --output boot.pocket`
+- Output: `inputs/boot.pocket` — 4,649,304 bytes, sha256 `ea7cc0ce882633089d0e928977ee5c807519a0b539ac930ee4bd9caba1bb9826`
+- Plan: `sha256:eea89226e55a1b3bb16e9f9b152e501e0c623c3f35dcecf2b51d3e67a85ffed4`; target `rocknix-h700-kms`,
+  720×480 physical / 360×240 logical, raster 2x; compiler reported 78 app modules, 9 pak entries, 211 declared characters.
+- Supersedes the 2026-10-29 baseline `d2836f45…` (4,084,728 bytes). Keep it as the rollback copy.
+
+**Bug found and fixed while verifying:** `pages/settings-page.tsx` `statePill()` built its class string with a
+nested template literal (`` `text-xs font-bold ${color === "green" ? … : …}` ``). PocketJS resolves classes
+against a compile-time table, so opening SETTINGS at runtime threw
+`unknown class "text-xs font-bold text-sky-300" - not in the compiled style table` and the panel failed to
+render. Rewritten as a ternary of full literals; the panel now mounts.
+
+**Sim verification** (`programs/sim/sim.ts` `runScenario`, 60 Hz, virtual frames only — no device involved):
+
+| state | result |
+|---|---|
+| boot (APPS) | renders tab bar APPS/SETTINGS/SYSTEM/TOOLS + status bar + app list |
+| `RTRIGGER` → SETTINGS | renders 16 rows, selection, progress bars, ON/OFF pills |
+| `RTRIGGER` ×2 → SYSTEM | renders OVERVIEW panel (CPU/MEM/STORAGE placeholders, no host data in sim) |
+| `DOWN`×2 + `CIRCLE` on Wi-Fi row | renders Wi-Fi page, "正在扫描… / 未发现网络" (sim has no `system.wifi` host) |
+
+Frames: `docs/screenshots/sim/01-apps.png` … `04-wifi.png` (480×272 sim framebuffer, not a device capture).
+
+**Rebuilt payload:** `dist/sdcard-payload.tar.gz` — 1,591,592 bytes,
+sha256 `d50f60854bd5e897d1568b53ed9bb6961f6adedad823440318d9a68e61b34d88`, containing
+`System/pocketjs/apps/boot.pocket` (`ea7cc0ce…`) and `System/pocketjs/bin/pocket-linux-kms` (`f621cb43…`).
+
+Still unverified: everything on real RG34XX hardware — the device did not answer on its LAN address
+during this round and no SD card was present in the HX90 reader, so package admission, KMS presentation
+and the boot path remain `docs/DEVICE-CHECKLIST.md` items.
+
 ## Blocked / open questions
-- **The PocketJS-native Solid launcher bundle could not be built here.** `inputs/launcher-src/`
+- **Resolved 2026-10-31:** the bundle is now rebuilt and sim-verified (previous round's note kept below). `inputs/launcher-src/`
   contains `main.tsx`/`library.tsx`/`showcase/*` that need the pinned PocketJS compiler
   (`pocket compile`, WASM core/rasterizer) which is not vendored in this repository; the
   showcase capture script even reads `/tmp/pocketjs-showcase-*` build artefacts. So the native
