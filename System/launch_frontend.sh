@@ -83,24 +83,31 @@ else
     display_args="--fb /dev/fb0"
 fi
 
-input=
-input_name=
+inputs=
+add_input() {
+    candidate=$1
+    case " $inputs " in
+        *" $candidate "*) return 0 ;;
+    esac
+    inputs="$inputs $candidate"
+}
+# Prefer ANBERNIC-keys, then add the remaining event nodes (the D-pad is a
+# separate gpio-keys device on event2).
 for candidate in /dev/input/event*; do
     [ -e "$candidate" ] || continue
     name=$(cat "/sys/class/input/${candidate##*/}/device/name" 2>/dev/null || :)
-    if [ "$name" = "ANBERNIC-keys" ]; then
-        input=$candidate
-        input_name=$name
-        break
-    fi
-    if [ -z "$input" ]; then
-        input=$candidate
-        input_name=$name
-    fi
+    [ "$name" = "ANBERNIC-keys" ] && add_input "$candidate"
 done
-if [ -n "$input" ]; then
-    log "input: $input ($input_name)"
-    input_args="--input $input"
+for candidate in /dev/input/event*; do
+    [ -e "$candidate" ] || continue
+    add_input "$candidate"
+done
+if [ -n "$inputs" ]; then
+    input_args=
+    for candidate in $inputs; do
+        input_args="$input_args --input $candidate"
+    done
+    log "inputs:$inputs"
 else
     log "input: no evdev device found; runtime will probe /dev/input"
     input_args=

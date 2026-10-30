@@ -187,6 +187,37 @@ Brightness uses the vendor `enhance_bright` node because BaseOS has no
 backlight class; Wi-Fi/BT control and MTP are reported as unavailable/inactive
 rather than fabricated. M4 complete.
 
+## M5 library record (2026-10-30)
+
+`System/compat/bin/pocketshell-games` is a BusyBox sh/awk port of the
+ROCKNIX scanner. It indexes `/storage/content/{games/<system>,music,videos,
+books}` plus `/media/*` and legacy roots, writes
+`/storage/pocketshell/library/library.json`, and marks `.pocket` entries as
+`kind:"pocketjs"`. The bridge now checks
+`/storage/System/compat/bin/pocketshell-games`.
+
+Test catalogue (6 items):
+
+```text
+games/gba  Test Game   rom
+games/misc tool        pocketjs
+games/snes test        rom
+music/all  My Song     rom
+videos/all clip        rom
+books/all  Read Me     rom
+```
+
+Direct `pocketshell-games scan` printed
+`{"total":6,"sections":["games","music","videos","books"]}`. The Library card
+was opened with D-pad right×7 + A and displayed `6 items`; deleting
+`library.json` and activating the selected “scan now” row regenerated it via
+`ROMSCAN`.
+
+Evidence: `docs/evidence/m5-library.png`, `docs/evidence/m5-scan.png`,
+`docs/evidence/M5-library.json`, `docs/evidence/M5-library.txt`.
+D-pad input now uses event2 as well; launch_frontend.sh passes event1/event0/
+event2. M5 complete.
+
 ## Recovery
 
 

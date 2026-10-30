@@ -132,12 +132,14 @@ runtime is rebuilt with the ROCKNIX PocketShell bridge modules so
 `LEVEL`, `STATE`, `CONTROL`, `SERVICE`, `SLEEP`, `LANGUAGE`, `ROMS`,
 `ROMSCAN` and `ROMLAUNCH` reach those commands.
 
-The `pocketshell-games` scanner and `pocketshell-play` are not installed yet:
-the scanner still needs its BusyBox rewrite, and game launch requires a safe
-display/input handover. These remain M5 work.
+`System/compat/bin/pocketshell-games` is the BusyBox sh/awk scanner. It
+indexes the content roots, writes `library.json`, and was verified through
+the Library card and `ROMSCAN`. `pocketshell-play` and `ROMLAUNCH` are still
+absent: game launch needs a safe display/input handover and remains M6-adjacent
+follow-up work.
 
-Stage 2 status: **partially complete**. Device state/settings are verified;
-scanner target validation, audio semantics, and game launch/return remain
+Stage 2 status: **partially complete**. Device state/settings and library
+scanning are verified; game launch/return and audio semantics remain
 unverified.
 
 ## Source and package baseline

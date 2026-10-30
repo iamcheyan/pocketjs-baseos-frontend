@@ -169,11 +169,11 @@ fn games_library() -> String {
 }
 
 fn games_scan() -> String {
-    let scanner = ["/usr/bin/pocketshell-games", "/storage/dev/usr/bin/pocketshell-games"]
+    let scanner = ["/storage/System/compat/bin/pocketshell-games", "/usr/bin/pocketshell-games", "/storage/dev/usr/bin/pocketshell-games"]
         .iter()
         .find(|candidate| std::path::Path::new(candidate).exists())
         .copied()
-        .unwrap_or("/usr/bin/pocketshell-games");
+        .unwrap_or("/storage/System/compat/bin/pocketshell-games");
     match run(scanner, &["scan"]) {
         Some(text) => {
             // Nudge the watcher so its cached signature also refreshes.

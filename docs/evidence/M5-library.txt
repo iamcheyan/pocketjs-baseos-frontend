@@ -1,0 +1,43 @@
+M5 library evidence (2026-10-30)
+
+Scanner: System/compat/bin/pocketshell-games (BusyBox sh/awk).
+Bridge candidate: /storage/System/compat/bin/pocketshell-games (the older
+/storage/dev fallback was removed for this test).
+State file: /storage/pocketshell/library/library.json.
+
+Test files created under the bound /storage:
+  /storage/content/games/gba/Test Game.gba
+  /storage/content/games/snes/test.sfc
+  /storage/content/games/misc/tool.pocket   (kind must be "pocketjs")
+  /storage/content/music/My Song.mp3
+  /storage/content/videos/clip.mp4
+  /storage/content/books/Read Me.txt
+
+Direct scan:
+  $ export PATH=/mnt/sdcard/System/compat/bin:$PATH
+  $ pocketshell-games scan
+  {"total":6,"sections":["games","music","videos","books"]}
+
+Catalogue (docs/evidence/M5-library.json):
+  total 6
+  games/gba: Test Game (rom)
+  games/misc: tool (pocketjs)
+  games/snes: test (rom)
+  music/all: My Song (rom)
+  videos/all: clip (rom)
+  books/all: Read Me (rom)
+
+UI flow:
+  HOME -> D-pad right 7 times -> Library card -> A
+  The Library page shows "6 items" and the GAMES/MUSIC/VIDEOS groups.
+  The JSON was then deleted, the selected "scan now" row was activated with
+  A, and the file was regenerated within the same session.
+
+Evidence:
+  docs/evidence/m5-library.png  Library groups/items after direct scan
+  docs/evidence/m5-scan.png     Library after UI-triggered ROMSCAN
+  docs/evidence/M5-library.json full catalogue
+
+Note: the D-pad lives on /dev/input/event2, so launch_frontend.sh now passes
+event1 (buttons), event0 and event2 to the runtime. The old single event1
+selection left D-pad navigation dead.
