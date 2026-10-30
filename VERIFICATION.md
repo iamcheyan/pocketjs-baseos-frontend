@@ -92,6 +92,40 @@ Still unverified: everything on real RG34XX hardware — the device did not answ
 during this round and no SD card was present in the HX90 reader, so package admission, KMS presentation
 and the boot path remain `docs/DEVICE-CHECKLIST.md` items.
 
+## Card-ready image (payload pre-installed)
+
+The 1.5.3 BaseOS image ships an **empty** `BASEOS` vfat partition (mmcblk0p7, 64 MB), and
+`/usr/sbin/frontend-session` only starts a card frontend when `System/launch_frontend.sh` exists on
+it. A freshly written card therefore boots BaseOS but not PocketJS until someone deploys the payload.
+This round produced a card-ready image so the card needs a single write:
+
+| item | value |
+|---|---|
+| source image | `baseos-rg34xx.img`, 1.5.3 (`BASEOS_BUILD=dfc32a8-dirty`, `BASEOS_PLATFORM=h700`) |
+| partition written | `BASEOS` vfat (p7) — payload extracted at its root, `System/` + `README.txt` |
+| image location | HX90 build work dir `work/rg34xx/baseos-rg34xx-1.5.3-pocketjs.img` (1,498,415,104 bytes) |
+| image sha256 | `29fda8cd32e3e15736d8f408203833dca45679135818f3c5960d4231927c2602` |
+| zip | `baseos-rg34xx-1.5.3-pocketjs.img.zip` — 83,966,427 bytes |
+| zip sha256 | `ee00777ffa7b29171717bd50c5aaf90efdb54cbfd9114990be1af05d3ad8e1b5` |
+
+Read-back verification after a clean unmount (loop-mounted `-o ro`, hashes of the on-image files):
+
+```
+ea7cc0ce8826…  System/pocketjs/apps/boot.pocket     (4,649,304 B, matches inputs/boot.pocket)
+20f7d0d72c9a…  System/pocketjs/bin/pocket-linux-kms (3,118,712 B, matches the image's /usr/share/baseos/pocketjs copy)
+eca4d2175f54…  System/launch_frontend.sh            (matches the repository copy)
+```
+
+`fsck.vfat -n` on the partition: clean, 10 files, 1,906/16,344 clusters used. The image-side
+`/usr/share/baseos/pocketjs/pocket-linux-kms` is byte-identical to the payload runtime, so
+`frontend-session` will not overwrite the card copy at boot.
+
+Selection order confirms the baked payload is what runs: `frontend-session` prefers
+`System/frontend`, then `System/launch_frontend.sh`; the payload provides only the latter, so the
+card goes straight into PocketJS. If a second (TF2) card is inserted, that card's root is used
+instead of p7 and would need its own payload.
+
+
 ## Blocked / open questions
 - **Resolved 2026-10-31:** the bundle is now rebuilt and sim-verified (previous round's note kept below). `inputs/launcher-src/`
   contains `main.tsx`/`library.tsx`/`showcase/*` that need the pinned PocketJS compiler

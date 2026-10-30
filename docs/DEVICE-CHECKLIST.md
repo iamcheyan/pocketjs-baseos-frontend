@@ -6,6 +6,12 @@ no device-side step has been run from the build workspace.
 
 ## Before writing the card
 
+0. Prefer the card-ready image `baseos-rg34xx-1.5.3-pocketjs.img.zip` (sha256 `ee00777f…`): the
+   payload is already inside the `BASEOS` partition, so writing the image is the only step and no
+   deploy run is needed. Writing the plain 1.5.3 image instead leaves `System/` off the card and
+   BaseOS boots to its menu without PocketJS. Do not insert a second (TF2) card — its root would
+   shadow the baked payload.
+
 1. Confirm the destination is the intended BaseOS SD card root, with `System/`
    at that root.
 2. Preserve the `.pocketjs-backup-*` directory created by `tools/deploy-to-card.sh`
