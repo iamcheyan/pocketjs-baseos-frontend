@@ -54,6 +54,9 @@ committed in `19f12b1`), not the 2026-10-29 baseline.
 - Plan: `sha256:eea89226e55a1b3bb16e9f9b152e501e0c623c3f35dcecf2b51d3e67a85ffed4`; target `rocknix-h700-kms`,
   720×480 physical / 360×240 logical, raster 2x; compiler reported 78 app modules, 9 pak entries, 211 declared characters.
 - Supersedes the 2026-10-29 baseline `d2836f45…` (4,084,728 bytes). Keep it as the rollback copy.
+- Runtime aligned with the 1.5.3 image: `inputs/pocket-linux-kms` is now the static musl build baked into
+  that image's rootfs (3,118,712 bytes, sha256 `20f7d0d7…`), not the older 2,233,080-byte dynamically linked
+  build, which does not even execute outside the target (missing `/lib/ld-linux-aarch64.so.1`).
 
 **Bug found and fixed while verifying:** `pages/settings-page.tsx` `statePill()` built its class string with a
 nested template literal (`` `text-xs font-bold ${color === "green" ? … : …}` ``). PocketJS resolves classes
@@ -72,9 +75,18 @@ render. Rewritten as a ternary of full literals; the panel now mounts.
 
 Frames: `docs/screenshots/sim/01-apps.png` … `04-wifi.png` (480×272 sim framebuffer, not a device capture).
 
-**Rebuilt payload:** `dist/sdcard-payload.tar.gz` — 1,591,592 bytes,
-sha256 `d50f60854bd5e897d1568b53ed9bb6961f6adedad823440318d9a68e61b34d88`, containing
-`System/pocketjs/apps/boot.pocket` (`ea7cc0ce…`) and `System/pocketjs/bin/pocket-linux-kms` (`f621cb43…`).
+**Package admission (the check `launch_frontend.sh` runs before starting the runtime):**
+
+```
+$ System/pocketjs/bin/pocket-linux-kms --package System/pocketjs/apps/boot.pocket --check
+package admitted: …/boot.pocket (rocknix-h700-kms)   # exit 0
+```
+
+run against the exact files extracted from the payload tarball, on the aarch64 build host.
+
+**Rebuilt payload:** `dist/sdcard-payload.tar.gz` — 1,875,521 bytes,
+sha256 `dafa73c373717acdbfd865dc603e40f056e913d8d93482e4901ba0489d56c529`, containing
+`System/pocketjs/apps/boot.pocket` (`ea7cc0ce…`) and `System/pocketjs/bin/pocket-linux-kms` (`20f7d0d7…`).
 
 Still unverified: everything on real RG34XX hardware — the device did not answer on its LAN address
 during this round and no SD card was present in the HX90 reader, so package admission, KMS presentation
