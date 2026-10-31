@@ -126,6 +126,30 @@ card goes straight into PocketJS. If a second (TF2) card is inserted, that card'
 instead of p7 and would need its own payload.
 
 
+## 2026-10-31 21:00 — card image re-verified; build-dir trap found
+
+Re-checked the card-ready artefact on HX90 without modifying it:
+
+- `baseos-rg34xx-1.5.3-pocketjs.img.zip` — `unzip -t` clean, sha256 `ee00777f…` unchanged.
+- p7 (`BASEOS`, 65 MB vfat) extracted from the inner image and read with mtools: 10 files,
+  `System/launch_frontend.sh` `eca4d217…`, `System/pocketjs/apps/boot.pocket` `ea7cc0ce…`
+  (4,649,304 B), `System/pocketjs/bin/pocket-linux-kms` `20f7d0d7…`, and a
+  `System/pocketjs/version` naming the same hashes. `fsck.vfat -n`: clean, 1,906/16,344 clusters.
+- The inner image's rootfs (p5) is `f24aa058…` (`BASEOS_BUILD=dfc32a8-dirty`).
+
+**Trap:** the same build work dir holds a later plain `baseos-rg34xx.img` (2026-10-31 19:36,
+sha256 `663b65a9…`, rootfs `5c3e0311…`, `build=1d166e1`) whose `BASEOS` partition (p7) is
+**empty** — 0 files, 66,940,928 bytes free. Writing that file boots BaseOS into its own menu and
+never starts PocketJS. Only `baseos-rg34xx-1.5.3-pocketjs.img` (or its zip) is card-ready; the
+19:36 tree is a plain release build that has not been given the payload.
+
+The 19:36 rootfs is a newer 1.5.3 build than the one baked into the card image. Baking the payload
+into it would yield a card-ready image on the newer rootfs; that swap has not been made, because
+choosing which rootfs ships is a product decision, not a build step.
+
+Still unverified: nothing has run on RG34XX hardware. The device did not answer on the LAN during
+this round and the card reader on HX90 was empty (0-byte `Mass-Storage` device).
+
 ## Blocked / open questions
 - **Resolved 2026-10-31:** the bundle is now rebuilt and sim-verified (previous round's note kept below). `inputs/launcher-src/`
   contains `main.tsx`/`library.tsx`/`showcase/*` that need the pinned PocketJS compiler
