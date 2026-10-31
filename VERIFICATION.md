@@ -164,3 +164,20 @@ this round and the card reader on HX90 was empty (0-byte `Mass-Storage` device).
 - 掌机真机（RG34XX / PJOS-LINUX）未验证；本轮只在本机 headless Chrome 里跑真实进程。
 - Real PocketJS runtime packaging (`boot.pocket` recompile), KMS presentation, and the native
   file-system bridge.
+
+## 2026-11-01 — 22:45 rebuild is payload-less; the card-ready zip is still the only writable artefact
+
+- The plain `baseos-rg34xx.img` in the HX90 build work dir (2026-10-31 22:45) was re-checked
+  read-only (loop device, p5/p7 mounted `ro`, nothing written): rootfs `BASEOS_BUILD=1d166e1`,
+  i.e. the same 1.5.3 build as the 19:36 tree, and the `BASEOS` partition (p7) holds **0 files**
+  with 66,940,928 bytes free — no `System/` payload. Writing this file boots BaseOS's own menu.
+- That build ended in a traceback after the artefacts were produced: `boot-gzip/` (boot.img,
+  boot-package.bin, manifest, manifest.json) was written at 22:45, then
+  `docker exec baseos-h700-mainline rm -rf /tmp/baseos-release-spl-rg34xx` failed with
+  `No such container` — the container had been replaced at cleanup time. No build process and no
+  goal session was left running afterwards.
+- Card-ready zip re-verified intact on HX90 without modification: `baseos-rg34xx-1.5.3-pocketjs.img.zip`,
+  83,966,427 bytes, sha256 `ee00777f…`, `unzip -t` clean, single member
+  `baseos-rg34xx-1.5.3-pocketjs.img`.
+- Still the open product decision: the card-ready image sits on the older rootfs `dfc32a8-dirty`,
+  while `1d166e1` is the newer 1.5.3 rootfs. Baking the payload into `1d166e1` has not been done.
